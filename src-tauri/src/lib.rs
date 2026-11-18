@@ -3,7 +3,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use moteur::{CANAUX, Configuration, Evenement, Message, Moteur, PISTES, ReglageCanal, ReglagePiste, SoundFont};
+use moteur::{
+    ActionTransport, CANAUX, Configuration, EtatTransport, Evenement, Message, Moteur, NoteSession, PISTES, ReglageCanal, ReglagePiste,
+    Session, SoundFont,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State, ipc::Response, path::BaseDirectory};
 
@@ -85,6 +88,48 @@ fn vers_evenement(e: EvenementIpc, frequence: u32) -> Evenement {
     Evenement { echantillon, canal: e.canal, message }
 }
 
+/// La session telle que l'interface la compile (notes du pattern ou de l'arrangement).
+#[derive(Deserialize)]
+struct SessionIpc {
+    tempo: f64,
+    longueur: u32,
+    temps_par_mesure: u32,
+    /// [début, fin, canal, hauteur, vélocité] : compact, une session peut compter des milliers de notes.
+    notes: Vec<(u32, u32, u8, u8, u8)>,
+}
+
+impl SessionIpc {
+    fn vers_moteur(&self) -> Session {
+        Session {
+            tempo: self.tempo.clamp(10.0, 999.0),
+            longueur: self.longueur.max(1),
+            temps_par_mesure: self.temps_par_mesure.max(1),
+            notes: self.notes.iter().map(|&(debut, fin, canal, hauteur, velocite)| NoteSession { debut, fin, canal, hauteur, velocite }).collect(),
+            boucler: true,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum ActionIpc {
+    Jouer { decompte: bool },
+    Pause,
+    Arreter,
+    Chercher { tic: f64 },
+    Metronome { actif: bool },
+}
+
+#[derive(Serialize)]
+struct LectureIpc {
+    etat: &'static str,
+    position: f64,
+    position_absolue: f64,
+    horloge: u64,
+    tempo: f64,
+    longueur: u32,
+}
+
 #[derive(Serialize)]
 struct InfosMoteur {
     frequence: u32,
@@ -100,6 +145,7 @@ struct MesuresIpc {
     horloge: u64,
     cretes: Vec<[f32; 2]>,
     voix: Vec<u32>,
+    lecture: LectureIpc,
 }
 
 /// Démarre la sortie audio (une seule fois) et renvoie ses caractéristiques.
@@ -149,24 +195,44 @@ fn moteur_configurer(etat: State<EtatMoteur>, configuration: ConfigurationIpc) -
 fn moteur_mesures(etat: State<EtatMoteur>) -> Result<MesuresIpc, String> {
     avec_moteur(&etat, |m| {
         let mesures = m.mesures();
-        MesuresIpc { horloge: m.horloge(), cretes: mesures.cretes, voix: mesures.voix }
+        let l = m.lecture();
+        let etat = match l.etat {
+            EtatTransport::Arret => "arret",
+            EtatTransport::Lecture => "lecture",
+            EtatTransport::Pause => "pause",
+        };
+        let lecture = LectureIpc { etat, position: l.position, position_absolue: l.position_absolue, horloge: l.horloge, tempo: l.tempo, longueur: l.longueur };
+        MesuresIpc { horloge: m.horloge(), cretes: mesures.cretes, voix: mesures.voix, lecture }
     })
 }
 
-/// Export : rendu hors ligne, renvoyé tel quel en octets WAV.
 #[tauri::command]
-async fn moteur_rendre_wav(
-    etat: State<'_, EtatMoteur>,
-    configuration: ConfigurationIpc,
-    evenements: Vec<EvenementIpc>,
-    duree: f64,
-) -> Result<Response, String> {
+fn moteur_session(etat: State<EtatMoteur>, session: SessionIpc) -> Result<(), String> {
+    let s = session.vers_moteur();
+    avec_moteur(&etat, |m| m.definir_session(s))
+}
+
+#[tauri::command]
+fn moteur_transport(etat: State<EtatMoteur>, action: ActionIpc) -> Result<(), String> {
+    let a = match action {
+        ActionIpc::Jouer { decompte } => ActionTransport::Jouer { decompte },
+        ActionIpc::Pause => ActionTransport::Pause,
+        ActionIpc::Arreter => ActionTransport::Arreter,
+        ActionIpc::Chercher { tic } => ActionTransport::Chercher(tic),
+        ActionIpc::Metronome { actif } => ActionTransport::Metronome(actif),
+    };
+    avec_moteur(&etat, |m| m.transport(a))
+}
+
+/// Export : rendu hors ligne de la session par le même transport, renvoyé en octets WAV.
+#[tauri::command]
+async fn moteur_rendre_wav(etat: State<'_, EtatMoteur>, configuration: ConfigurationIpc, session: SessionIpc, queue: f64) -> Result<Response, String> {
     const FREQUENCE: u32 = 44100;
     let banque = etat.banque.clone();
     let c = configuration.vers_moteur();
-    let evenements: Vec<Evenement> = evenements.into_iter().map(|e| vers_evenement(e, FREQUENCE)).collect();
+    let s = session.vers_moteur();
     let octets = tauri::async_runtime::spawn_blocking(move || {
-        moteur::rendu::rendre(&banque, FREQUENCE, &c, &evenements, duree).map(|(g, d)| moteur::rendu::wav(&g, &d, FREQUENCE))
+        moteur::rendu::rendre_session(&banque, FREQUENCE, &c, &s, queue).map(|(g, d)| moteur::rendu::wav(&g, &d, FREQUENCE))
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -198,6 +264,8 @@ pub fn lancer() {
             moteur_tout_couper,
             moteur_configurer,
             moteur_mesures,
+            moteur_session,
+            moteur_transport,
             moteur_rendre_wav
         ])
         .run(tauri::generate_context!())

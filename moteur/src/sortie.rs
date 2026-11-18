@@ -11,22 +11,44 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rustysynth::SoundFont;
 
 use crate::noyau::{BLOC_MAX, CANAUX, Configuration, Evenement, Mesures, Noyau, PISTES};
+use crate::transport::{ActionTransport, EtatTransport, Session, SessionPreparee, Transport};
 
 pub enum Commande {
     Evenement(Evenement),
     Configurer(Box<Configuration>),
     ToutCouper,
+    Session(Box<SessionPreparee>),
+    Transport(ActionTransport),
+}
+
+/// Ce que le fil audio rend au fil de l'interface pour être libéré hors du fil audio.
+pub enum Dechet {
+    Configuration(Box<Configuration>),
+    Session(Box<SessionPreparee>),
+}
+
+/// État du transport publié par le fil audio.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EtatLecture {
+    pub etat: EtatTransport,
+    /// Position dans la boucle et position absolue, en tics, à l'instant `horloge`.
+    pub position: f64,
+    pub position_absolue: f64,
+    pub horloge: u64,
+    pub tempo: f64,
+    pub longueur: u32,
 }
 
 /// État partagé entre le fil audio et l'interface.
 struct Partage {
     horloge: AtomicU64,
     mesures: Mutex<Mesures>,
+    lecture: Mutex<EtatLecture>,
 }
 
 pub struct Moteur {
     commandes: rtrb::Producer<Commande>,
-    poubelle: rtrb::Consumer<Box<Configuration>>,
+    poubelle: rtrb::Consumer<Dechet>,
     partage: Arc<Partage>,
     frequence: u32,
     /// Nom de l'appareil de sortie, ou None : pas de carte son, horloge silencieuse.
@@ -39,10 +61,11 @@ impl Moteur {
     /// Ouvre la sortie audio par défaut et démarre le rendu.
     pub fn demarrer(banque: Arc<SoundFont>) -> Result<Moteur, String> {
         let (envoi_commandes, commandes) = rtrb::RingBuffer::<Commande>::new(16384);
-        let (envoi_poubelle, poubelle) = rtrb::RingBuffer::<Box<Configuration>>::new(64);
+        let (envoi_poubelle, poubelle) = rtrb::RingBuffer::<Dechet>::new(64);
         let partage = Arc::new(Partage {
             horloge: AtomicU64::new(0),
             mesures: Mutex::new(Mesures { cretes: vec![[0.0; 2]; PISTES], voix: vec![0; CANAUX] }),
+            lecture: Mutex::new(EtatLecture { etat: EtatTransport::Arret, position: 0.0, position_absolue: 0.0, horloge: 0, tempo: 120.0, longueur: 384 }),
         });
         let (arret, attente) = mpsc::channel::<()>();
         let (pret, demarrage) = mpsc::channel::<Result<(u32, Option<String>), String>>();
@@ -59,6 +82,7 @@ impl Moteur {
                     partage: partage_audio,
                     gauche: vec![0.0; BLOC_MAX],
                     droite: vec![0.0; BLOC_MAX],
+                    transport: Transport::new(),
                 };
                 match trouver_sortie() {
                     Ok((appareil, nom, config)) => {
@@ -121,6 +145,20 @@ impl Moteur {
         self.envoyer(Commande::ToutCouper);
     }
 
+    pub fn definir_session(&mut self, session: Session) {
+        // préparée ici (tri, allocation), hors du fil audio
+        self.envoyer(Commande::Session(Box::new(SessionPreparee::new(session))));
+    }
+
+    pub fn transport(&mut self, action: ActionTransport) {
+        self.envoyer(Commande::Transport(action));
+    }
+
+    /// Dernier état du transport publié par le fil audio.
+    pub fn lecture(&self) -> EtatLecture {
+        *self.partage.lecture.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Mesures depuis le dernier appel (les crêtes repartent de zéro).
     pub fn mesures(&self) -> Mesures {
         let mut mesures = self.partage.mesures.lock().unwrap_or_else(|e| e.into_inner());
@@ -180,10 +218,11 @@ fn horloge_silencieuse(
 /// Ce dont le rendu a besoin à chaque bloc, avec ou sans carte son.
 struct Rendu {
     commandes: rtrb::Consumer<Commande>,
-    poubelle: rtrb::Producer<Box<Configuration>>,
+    poubelle: rtrb::Producer<Dechet>,
     partage: Arc<Partage>,
     gauche: Vec<f32>,
     droite: Vec<f32>,
+    transport: Transport,
 }
 
 impl Rendu {
@@ -196,12 +235,19 @@ impl Rendu {
                 Commande::Configurer(configuration) => {
                     noyau.configurer(&configuration);
                     // libérée par l'autre fil : pas de désallocation ici
-                    let _ = self.poubelle.push(configuration);
+                    let _ = self.poubelle.push(Dechet::Configuration(configuration));
                 }
+                Commande::Session(mut session) => {
+                    // la nouvelle session entre, l'ancienne repart dans la même boîte
+                    self.transport.echanger_session(&mut session, noyau);
+                    let _ = self.poubelle.push(Dechet::Session(session));
+                }
+                Commande::Transport(action) => self.transport.agir(action, noyau),
             }
         }
         for morceau in sortie.chunks_mut(BLOC_MAX * voies) {
             let n = morceau.len() / voies;
+            self.transport.avancer(noyau, n);
             noyau.rendre(&mut self.gauche[..n], &mut self.droite[..n]);
             for (i, trame) in morceau.chunks_mut(voies).enumerate() {
                 trame[0] = self.gauche[i];
@@ -214,6 +260,17 @@ impl Rendu {
             }
         }
         self.partage.horloge.store(noyau.horloge(), Ordering::Release);
+        if let Ok(mut lecture) = self.partage.lecture.try_lock() {
+            let session = self.transport.session();
+            *lecture = EtatLecture {
+                etat: self.transport.etat(),
+                position: self.transport.position(),
+                position_absolue: self.transport.position_absolue(),
+                horloge: noyau.horloge(),
+                tempo: session.tempo,
+                longueur: session.longueur,
+            };
+        }
         if let Ok(mut mesures) = self.partage.mesures.try_lock() {
             noyau.cumuler_mesures(&mut mesures);
         }

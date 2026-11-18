@@ -154,13 +154,22 @@ pub struct Noyau {
     reverb: Reverb,
     limiteur: Limiteur,
     envoi: [Vec<f32>; 2],
+    /// Clics du métronome à faire entendre : (début en échantillons, accent).
+    clics: Vec<(u64, bool)>,
 }
+
+/// Clics en attente au plus (sans allocation dans le fil audio).
+const CLICS_MAX: usize = 32;
+const CLIC_DUREE: f32 = 0.06;
+const CLIC_NIVEAU: f32 = 0.35;
 
 impl Noyau {
     pub fn new(banque: &Arc<SoundFont>, frequence: u32) -> Result<Self, String> {
         let mut reglages = SynthesizerSettings::new(frequence as i32);
         reglages.enable_reverb_and_chorus = false; // la réverbération est celle du mixer
         reglages.maximum_polyphony = 64;
+        // blocs internes de 32 échantillons (0,7 ms) : un événement attend au plus un bloc
+        reglages.block_size = 32;
         let mut canaux = Vec::with_capacity(CANAUX);
         for _ in 0..CANAUX {
             let synth = Synthesizer::new(banque, &reglages).map_err(|e| format!("synthétiseur : {e:?}"))?;
@@ -191,6 +200,7 @@ impl Noyau {
             reverb: Reverb::new(frequence as f32),
             limiteur: Limiteur::new(frequence as f32),
             envoi: [vec![0.0; BLOC_MAX], vec![0.0; BLOC_MAX]],
+            clics: Vec::with_capacity(CLICS_MAX),
         };
         noyau.configurer(&Configuration::default());
         Ok(noyau)
@@ -233,6 +243,13 @@ impl Noyau {
         }
         let position = self.file.partition_point(|e| e.echantillon <= evenement.echantillon);
         self.file.insert(position, evenement);
+    }
+
+    /// Programme un clic de métronome (plus aigu sur l'accent).
+    pub fn clic(&mut self, echantillon: u64, accent: bool) {
+        if self.clics.len() < CLICS_MAX {
+            self.clics.push((echantillon, accent));
+        }
     }
 
     /// Coupe net ce qui sonne et oublie ce qui était programmé.
@@ -339,6 +356,28 @@ impl Noyau {
             gauche[i] = g;
             droite[i] = d;
             crete = [crete[0].max(g.abs()), crete[1].max(d.abs())];
+        }
+        // 4. le métronome, par-dessus (il ne passe pas par le limiteur)
+        if !self.clics.is_empty() {
+            let fe = self.frequence as f32;
+            let duree = (CLIC_DUREE * fe) as u64;
+            for &(debut, accent) in self.clics.iter() {
+                let frequence = if accent { 1760.0 } else { 1320.0 };
+                for i in 0..n {
+                    let t = self.horloge + i as u64;
+                    if t < debut || t >= debut + duree {
+                        continue;
+                    }
+                    let x = (t - debut) as f32 / fe;
+                    let v = CLIC_NIVEAU * (2.0 * std::f32::consts::PI * frequence * x).sin() * (-x / 0.012).exp();
+                    gauche[i] = (gauche[i] + v).clamp(-1.0, 1.0);
+                    droite[i] = (droite[i] + v).clamp(-1.0, 1.0);
+                    // le vumètre du maître montre ce qu'on entend, métronome compris
+                    crete = [crete[0].max(gauche[i].abs()), crete[1].max(droite[i].abs())];
+                }
+            }
+            let fin = self.horloge + n as u64;
+            self.clics.retain(|&(debut, _)| debut + duree > fin);
         }
         maitre.crete = [maitre.crete[0].max(crete[0]), maitre.crete[1].max(crete[1])];
         self.horloge += n as u64;

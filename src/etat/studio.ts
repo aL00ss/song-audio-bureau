@@ -9,8 +9,8 @@ import { create } from 'zustand'
 import { banquesNecessaires } from '../audio/banques'
 import type { MoteurAudio } from '../audio/interface'
 import { MoteurSon } from '../audio/moteur'
-import { MoteurNatif } from '../audio/natif'
-import { type EtatTransport, type ModeLecture, Transport } from '../audio/transport'
+import { MoteurNatif, TransportNatif } from '../audio/natif'
+import { type EtatTransport, type ModeLecture, Transport, type TransportStudio } from '../audio/transport'
 import { creerDemo } from '../projet/demo'
 import { depuisMidi } from '../projet/importMidi'
 import { ajouterCanal, attribuerCanauxMidi, type Canal, creerProjet, modifierCanal, type PisteMixage, type Projet } from '../projet/modele'
@@ -99,6 +99,10 @@ interface EtatStudio {
   /** Rendu WAV hors ligne (null en cas d'échec : un message l'explique). */
   exporterWav(): Promise<Blob | null>
   exportEnCours: boolean
+  // ---- métronome (transport du moteur Rust)
+  metronomeDisponible: boolean
+  metronome: boolean
+  basculerMetronome(): void
   // ---- jouer avec l'orchestre
   partie: { canalId: string; justes: number; fausses: number; etaitMuet: boolean } | null
   /** Le canal se tait (sa partie sert de guide) et l'on joue sa partie soi-même. */
@@ -136,7 +140,7 @@ let moteur: MoteurAudio | null = null
 
 /** Dans l'application de bureau, le son est rendu par le moteur Rust. */
 export const estBureau = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-let transport: Transport | null = null
+let transport: TransportStudio | null = null
 /** Chargement en cours : un second appel (React StrictMode) attend le même, sans créer un autre contexte audio. */
 let initialisation: Promise<void> | null = null
 
@@ -243,8 +247,9 @@ export const useStudio = create<EtatStudio>()((set, get) => {
             : await MoteurSon.creer(URL_BANQUE, (recus, total) => {
                 set({ chargement: { phase: 'son', progression: total ? recus / total : 0 } })
               })
-          transport = new Transport(moteur, moteur)
+          transport = moteur instanceof MoteurNatif ? new TransportNatif(moteur) : new Transport(moteur, moteur)
           transport.surEtat((etat) => set({ transport: etat }))
+          set({ metronomeDisponible: transport.metronomeDisponible })
           await restauration
           synchroniser(get().projet)
           sauvegarderAutomatiquement()
@@ -496,6 +501,15 @@ export const useStudio = create<EtatStudio>()((set, get) => {
     },
 
     exportEnCours: false,
+
+    metronomeDisponible: false,
+    metronome: false,
+    basculerMetronome() {
+      if (!transport?.metronomeDisponible) return
+      const actif = !get().metronome
+      transport.metronome(actif)
+      set({ metronome: actif })
+    },
     async exporterWav() {
       if (!moteur || get().exportEnCours) return null
       set({ exportEnCours: true, message: null })

@@ -11,7 +11,7 @@ import type { MoteurAudio } from './interface'
 import type { NiveauStereo } from './mixer'
 import { routageMixer } from './routage'
 import { pistesAudibles } from './niveaux'
-import { evenementsDuMorceau, evenementsDuPattern, type ModeLecture } from './transport'
+import { type EtatTransport, evenementsDuMorceau, evenementsDuPattern, longueurDuMorceau, type ModeLecture, type TransportStudio } from './transport'
 
 /** Canaux et pistes du moteur Rust. */
 export const CANAUX_NATIFS = 32
@@ -66,10 +66,54 @@ export function evenementsExport(projet: Projet, mode: ModeLecture): { evenement
   return { evenements, duree: ticsEnSecondes(longueurExport(projet, mode), projet.tempo) + QUEUE_EXPORT }
 }
 
+/** La session pour le transport du moteur : [début, fin, canal, hauteur, vélocité] par note. */
+export interface SessionNative {
+  tempo: number
+  longueur: number
+  temps_par_mesure: number
+  notes: [number, number, number, number, number][]
+}
+
+/**
+ * Ce que le transport du moteur doit jouer : les notes du pattern actif (mode pattern) ou de
+ * tout l'arrangement (mode morceau), swing et muets appliqués, comme le transport web.
+ */
+export function sessionNative(projet: Projet, mode: ModeLecture): SessionNative {
+  const pattern = patternActif(projet)
+  const brut = mode === 'morceau' ? evenementsDuMorceau(projet) : evenementsDuPattern(projet, pattern)
+  // les événements viennent par paires allumage/extinction : on les rassemble en notes
+  const ouvertes = new Map<string, { tic: number; velocite: number }[]>()
+  const notes: SessionNative['notes'] = []
+  for (const e of brut) {
+    const cle = `${e.canal}:${e.hauteur}`
+    if (e.allume) {
+      const pile = ouvertes.get(cle) ?? []
+      pile.push({ tic: e.tic, velocite: e.velocite })
+      ouvertes.set(cle, pile)
+    } else {
+      const debut = ouvertes.get(cle)?.shift()
+      if (debut) notes.push([debut.tic, e.tic, e.canal, e.hauteur, Math.max(1, debut.velocite)])
+    }
+  }
+  notes.sort((a, b) => a[0] - b[0])
+  const longueur = mode === 'morceau' ? longueurDuMorceau(projet) : Math.max(1, pattern.longueur)
+  return { tempo: projet.tempo, longueur, temps_par_mesure: projet.signature.numerateur, notes }
+}
+
+export interface LectureNative {
+  etat: EtatTransport
+  position: number
+  position_absolue: number
+  horloge: number
+  tempo: number
+  longueur: number
+}
+
 interface Mesures {
   horloge: number
   cretes: [number, number][]
   voix: number[]
+  lecture: LectureNative
 }
 
 export class MoteurNatif implements MoteurAudio {
@@ -80,7 +124,8 @@ export class MoteurNatif implements MoteurAudio {
   /** Décalage entre l'horloge du moteur et performance.now(), en secondes (lissé). */
   #decalage: number | null = null
   #dernierTemps = 0
-  #mesures: Mesures = { horloge: 0, cretes: [], voix: [] }
+  #mesures: Mesures = { horloge: 0, cretes: [], voix: [], lecture: { etat: 'arret', position: 0, position_absolue: 0, horloge: 0, tempo: 120, longueur: 384 } }
+  #surMesures = new Set<(lecture: LectureNative) => void>()
   #lot: EvenementNatif[] = []
   #envoiPrevu = false
 
@@ -102,11 +147,26 @@ export class MoteurNatif implements MoteurAudio {
       const mesures = await invoke<Mesures>('moteur_mesures')
       // les crêtes sont celles accumulées depuis le relevé précédent
       this.#mesures = mesures
+      for (const ecouteur of this.#surMesures) ecouteur(mesures.lecture)
       const decalage = mesures.horloge / this.#frequence - performance.now() / 1000
       this.#decalage = this.#decalage === null ? decalage : this.#decalage + (decalage - this.#decalage) * 0.1
     } catch (erreur) {
       console.warn('Mesures du moteur indisponibles :', erreur)
     }
+  }
+
+  get frequence(): number {
+    return this.#frequence
+  }
+
+  /** Dernier état du transport relevé dans le moteur. */
+  get lecture(): LectureNative {
+    return this.#mesures.lecture
+  }
+
+  surMesures(ecouteur: (lecture: LectureNative) => void): () => void {
+    this.#surMesures.add(ecouteur)
+    return () => this.#surMesures.delete(ecouteur)
   }
 
   async demarrer(): Promise<void> {
@@ -167,8 +227,117 @@ export class MoteurNatif implements MoteurAudio {
   }
 
   async exporterWav(projet: Projet, mode: ModeLecture): Promise<Blob> {
-    const { evenements, duree } = evenementsExport(projet, mode)
-    const octets = await invoke<ArrayBuffer>('moteur_rendre_wav', { configuration: configurationNative(projet), evenements, duree })
+    // rendu par le même transport que la lecture : une fois, puis la queue
+    const octets = await invoke<ArrayBuffer>('moteur_rendre_wav', {
+      configuration: configurationNative(projet),
+      session: sessionNative(projet, mode),
+      queue: QUEUE_EXPORT,
+    })
     return new Blob([octets], { type: 'audio/wav' })
+  }
+}
+
+/**
+ * Transport tenu par le moteur Rust : l'interface ne fait que lui envoyer la session et les
+ * ordres ; la position affichée est celle du moteur, prolongée entre deux relevés.
+ */
+export class TransportNatif implements TransportStudio {
+  readonly metronomeDisponible = true
+  readonly #moteur: MoteurNatif
+  #mode: ModeLecture = 'pattern'
+  #etat: EtatTransport = 'arret'
+  #tempo = 120
+  #longueur = 384
+  /** Position connue localement (après un ordre, avant que le moteur ne la confirme). */
+  #ancre: { position: number; temps: number } | null = { position: 0, temps: 0 }
+  #ecouteurs = new Set<(etat: EtatTransport) => void>()
+
+  constructor(moteur: MoteurNatif) {
+    this.#moteur = moteur
+    moteur.surMesures((lecture) => {
+      // le moteur s'arrête seul en fin de rendu sans boucle ; ici, on suit son état
+      if (lecture.etat !== this.#etat && this.#ancre === null) this.#changerEtat(lecture.etat)
+      if (this.#ancre && lecture.etat === this.#etat) this.#ancre = null
+    })
+  }
+
+  get etat(): EtatTransport {
+    return this.#etat
+  }
+  get tempo(): number {
+    return this.#tempo
+  }
+  get longueur(): number {
+    return this.#longueur
+  }
+  get mode(): ModeLecture {
+    return this.#mode
+  }
+
+  get positionAbsolue(): number {
+    if (this.#ancre) return this.#ancre.position
+    const l = this.#moteur.lecture
+    if (l.etat !== 'lecture') return l.position_absolue
+    // prolonge la position relevée jusqu'à maintenant, sur l'horloge du moteur
+    const ecoule = Math.max(0, this.#moteur.maintenant() - l.horloge / this.#moteur.frequence)
+    return l.position_absolue + (ecoule * l.tempo * 96) / 60
+  }
+
+  get position(): number {
+    return ((this.positionAbsolue % this.#longueur) + this.#longueur) % this.#longueur
+  }
+
+  surEtat(ecouteur: (etat: EtatTransport) => void): () => void {
+    this.#ecouteurs.add(ecouteur)
+    return () => this.#ecouteurs.delete(ecouteur)
+  }
+
+  definirProjet(projet: Projet, mode: ModeLecture = this.#mode): void {
+    if (mode !== this.#mode) {
+      this.arreter()
+      this.#mode = mode
+    }
+    const session = sessionNative(projet, mode)
+    this.#tempo = session.tempo
+    this.#longueur = session.longueur
+    void invoke('moteur_session', { session })
+  }
+
+  #agir(action: object, etat: EtatTransport, position: number): void {
+    this.#ancre = { position, temps: performance.now() }
+    void invoke('moteur_transport', { action })
+    this.#changerEtat(etat)
+  }
+
+  jouer(): void {
+    if (this.#etat === 'lecture') return
+    this.#agir({ type: 'jouer', decompte: false }, 'lecture', this.positionAbsolue)
+    // pendant la lecture, la position vient du moteur dès le prochain relevé
+    this.#ancre = null
+  }
+
+  pause(): void {
+    if (this.#etat !== 'lecture') return
+    this.#agir({ type: 'pause' }, 'pause', this.position)
+  }
+
+  arreter(): void {
+    this.#agir({ type: 'arreter' }, 'arret', 0)
+  }
+
+  chercher(tic: number): void {
+    const cible = ((tic % this.#longueur) + this.#longueur) % this.#longueur
+    this.#ancre = { position: cible, temps: performance.now() }
+    void invoke('moteur_transport', { action: { type: 'chercher', tic: cible } })
+  }
+
+  metronome(actif: boolean): void {
+    void invoke('moteur_transport', { action: { type: 'metronome', actif } })
+  }
+
+  #changerEtat(etat: EtatTransport): void {
+    if (etat === this.#etat) return
+    this.#etat = etat
+    for (const ecouteur of this.#ecouteurs) ecouteur(etat)
   }
 }

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { creerDemo } from '../projet/demo'
 import { ajouterCanal, creerProjet } from '../projet/modele'
 import { definirPas } from '../projet/pas'
-import { configurationNative, evenementsExport, QUEUE_EXPORT } from './natif'
+import { ajouterClip } from '../projet/playlist'
+import { configurationNative, evenementsExport, QUEUE_EXPORT, sessionNative } from './natif'
 
 describe('client du moteur Rust', () => {
   it('configuration : chaque canal sur son canal MIDI, routé vers sa piste ; pistes audibles', () => {
@@ -32,5 +33,24 @@ describe('client du moteur Rust', () => {
     expect(evenements[1].temps).toBeGreaterThan(0.6)
     expect(evenements[1].temps).toBeLessThanOrEqual(0.625)
     expect(duree).toBeCloseTo(2 + QUEUE_EXPORT) // une mesure à 120 = 2 s
+  })
+
+  it('session : notes appariées (début, fin, canal, hauteur, vélocité), boucle, mesure', () => {
+    let p = creerProjet()
+    const r = ajouterCanal(p, { batterie: true })
+    p = definirPas(definirPas(r.projet, r.id, 0), r.id, 8)
+    const s = sessionNative(p, 'pattern')
+    expect(s.longueur).toBe(384)
+    expect(s.temps_par_mesure).toBe(4)
+    expect(s.notes).toHaveLength(2)
+    const [debut, fin, canal, hauteur, velocite] = s.notes[1]
+    expect([debut, canal, hauteur]).toEqual([192, 9, 36])
+    expect(fin).toBeGreaterThan(debut)
+    expect(velocite).toBeGreaterThan(0)
+    // mode morceau : chaque clip rejoue le pattern à sa place
+    p = ajouterClip(ajouterClip(p, p.patternActif, 0, 0).projet, p.patternActif, 0, 384).projet
+    const m = sessionNative(p, 'morceau')
+    expect(m.notes.map((n) => n[0])).toEqual([0, 192, 384, 576])
+    expect(m.longueur).toBe(768)
   })
 })

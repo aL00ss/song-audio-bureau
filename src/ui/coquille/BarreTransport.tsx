@@ -25,7 +25,7 @@ function Afficheur({ testId, titre, children }: { testId: string; titre: string;
 export function BarreTransport() {
   const {
     transport, chargement, projet, enregistrement, mode, basculerEnregistrement, basculerLecture, arreter, changerTempo,
-    changerVolumeMaitre, changerMode, choisirPattern, nouveauPattern, dupliquerPattern, exportEnCours, banques,
+    changerVolumeMaitre, changerMode, choisirPattern, nouveauPattern, dupliquerPattern, exportEnCours, banques, metronomeDisponible, metronome, basculerMetronome,
   } = useStudio()
   const banqueEnCours = BANQUES.find((b) => banques[b.id]?.phase === 'chargement')
   const progressionBanque = banqueEnCours ? banques[banqueEnCours.id] : null
@@ -72,6 +72,18 @@ export function BarreTransport() {
         >
           <span aria-hidden className="mr-1 text-red-400 in-aria-pressed:text-white">●</span>Rec
         </button>
+        {metronomeDisponible && (
+          <button
+            type="button"
+            data-testid="metronome"
+            aria-pressed={metronome}
+            onClick={basculerMetronome}
+            title="Métronome : un clic à chaque temps, plus aigu au premier temps de la mesure"
+            className={`${bouton} aria-pressed:border-accent aria-pressed:bg-accent aria-pressed:text-black`}
+          >
+            Métro
+          </button>
+        )}
         <span className="ml-1 inline-flex overflow-hidden rounded border border-bord" role="group" aria-label="Mode de lecture">
           {(['pattern', 'morceau'] as const).map((m) => (
             <button

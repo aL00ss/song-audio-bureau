@@ -97,7 +97,34 @@ export const minuterieNavigateur: Minuterie = {
   arreter: (jeton) => clearInterval(jeton as ReturnType<typeof setInterval>),
 }
 
-export class Transport {
+/** Ce que le studio attend d'un transport (celui du navigateur ou celui du moteur Rust). */
+export interface TransportStudio {
+  readonly etat: EtatTransport
+  readonly tempo: number
+  /** Longueur de la boucle, en tics. */
+  readonly longueur: number
+  /** Position absolue en tics, boucles comprises. */
+  readonly positionAbsolue: number
+  /** Position dans la boucle, en tics. */
+  readonly position: number
+  readonly mode: ModeLecture
+  surEtat(ecouteur: (etat: EtatTransport) => void): () => void
+  definirProjet(projet: Projet, mode?: ModeLecture): void
+  jouer(): void
+  pause(): void
+  arreter(): void
+  chercher(tic: number): void
+  /** Métronome (transport du moteur Rust seulement). */
+  readonly metronomeDisponible: boolean
+  metronome(actif: boolean): void
+}
+
+export class Transport implements TransportStudio {
+  readonly metronomeDisponible = false
+  metronome(): void {
+    // pas de métronome dans la version navigateur
+  }
+
   #horloge: Horloge
   #destination: Destination
   #minuterie: Minuterie

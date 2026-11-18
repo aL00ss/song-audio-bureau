@@ -79,8 +79,18 @@ et l'application `src-tauri` qui l'expose à l'interface.
   `MoteurNatif` derrière une interface commune `MoteurAudio` (le navigateur garde SpessaSynth) ;
   export WAV rendu par Rust. 10 tests Rust, 88 tests unitaires, 64 tests navigateur, 3 tests de
   la vraie fenêtre. Limites reportées : banques supplémentaires (SF3 de la version web) pas
-  encore lues par le moteur Rust (phase D), changement d'appareil audio à chaud (phase O), la
-  programmation des notes reste dans l'interface (phase B).
+  encore lues par le moteur Rust (phase D), changement d'appareil audio à chaud (phase O).
+- [x] **B — Transport dans le moteur** : l'interface compile une session (notes du pattern ou
+  de l'arrangement, swing et muets appliqués) ; le transport Rust programme chaque note dans le
+  bloc audio où elle tombe (boucle exacte à 32 échantillons près, blocs internes du
+  synthétiseur réduits à 32), pause, arrêt, recherche, modifications en pleine lecture (une
+  note retirée est relâchée, les autres continuent), métronome (bouton « Métro », accent au
+  premier temps) et décompte d'une mesure ; la session est préparée hors du fil audio (aucune
+  allocation dedans) ; l'export WAV passe par le même transport (rendu identique, sans
+  reprise de la boucle). Interface commune `TransportStudio` (le navigateur garde son
+  transport). 15 tests Rust, 89 tests unitaires, 64 tests navigateur, 5 tests de la vraie
+  fenêtre. Reportés : bouton du décompte (avec l'enregistrement, phase L), changements de
+  tempo et de signature dans le temps (avec l'automatisation, phase K).
 
 ## Banques de sons retenues (recherche du 2026-11-18)
 

@@ -71,3 +71,43 @@ test('export WAV rendu par le moteur Rust : bonne durée, non silencieux', async
   expect(r.crete).toBeGreaterThan(0.05)
   expect(r.crete).toBeLessThanOrEqual(1)
 })
+
+test('le transport est tenu par le moteur : la position avance, la pause la fige, la recherche la déplace', async () => {
+  await page.evaluate(() => (window as any).__studio.etat().chargerDemo())
+  const position = () => page.evaluate(() => (window as any).__studio.audio.transport.positionAbsolue as number)
+  await page.getByTestId('lecture').click()
+  await page.waitForTimeout(600)
+  const a = await position()
+  await page.waitForTimeout(500)
+  const b = await position()
+  // à 100 noires par minute : 0,5 s ≈ 80 tics
+  expect(b - a).toBeGreaterThan(55)
+  expect(b - a).toBeLessThan(110)
+  await page.getByTestId('lecture').click() // pause
+  await expect(page.getByTestId('lecture')).toHaveText('Lecture')
+  const figee = await position()
+  await page.waitForTimeout(400)
+  expect(Math.abs((await position()) - figee)).toBeLessThan(2)
+  await page.evaluate(() => (window as any).__studio.audio.transport.chercher(96))
+  await expect.poll(position).toBeCloseTo(96, 0)
+  await page.getByTestId('stop').click()
+  await expect.poll(position).toBe(0)
+})
+
+test('métronome : le bouton existe sur le bureau et le maître sonne même sans instrument', async () => {
+  await page.evaluate(() => {
+    const e = (window as any).__studio.etat()
+    e.nouveauProjet()
+    for (const c of e.projet.canaux) (window as any).__studio.etat().modifierCanal(c.id, { muet: true })
+  })
+  await page.getByTestId('metronome').click()
+  await expect(page.getByTestId('metronome')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('lecture').click()
+  // tous les canaux sont muets : ce qui sonne au maître, c'est le métronome
+  expect(await crete(0, 1500)).toBeGreaterThan(0.05)
+  await page.getByTestId('stop').click()
+  await page.getByTestId('metronome').click()
+  await page.getByTestId('lecture').click()
+  expect(await crete(0, 1200)).toBeLessThan(0.0005)
+  await page.getByTestId('stop').click()
+})
