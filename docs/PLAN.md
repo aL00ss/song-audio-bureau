@@ -69,7 +69,18 @@ et l'application `src-tauri` qui l'expose à l'interface.
   chaîne Rust `x86_64-pc-windows-gnu` (`rustup override`) et MinGW-w64 portable (WinLibs : GCC,
   CMake) dans `C:\Users\user\outils\mingw64` ; la CI, elle, utilise MSVC. Le type de crate
   `cdylib` (mobile) est retiré : il dépasse la limite d'exports du lieur GNU.
-- [ ] **A — Moteur Rust** (en cours) : effets du mixer et noyau écrits.
+- [x] **A — Moteur Rust** : crate `moteur` (bibliothèque sans Tauri) : un synthétiseur
+  rustysynth par canal (32 canaux, batterie sur n'importe lequel), file d'événements datés à
+  l'échantillon, mixer complet porté de la version web (égaliseur 3 bandes aux formules de la
+  Web Audio API, fader quadratique, panoramique, muet et solo, envoi vers une réverbération
+  Freeverb, limiteur -3 dB du maître), sortie cpal sans verrou ni allocation dans le fil audio
+  (files rtrb), **horloge silencieuse** au rythme réel quand aucune carte son n'est disponible
+  (message dans l'interface), rendu hors ligne et WAV ; commandes Tauri ; client TypeScript
+  `MoteurNatif` derrière une interface commune `MoteurAudio` (le navigateur garde SpessaSynth) ;
+  export WAV rendu par Rust. 10 tests Rust, 88 tests unitaires, 64 tests navigateur, 3 tests de
+  la vraie fenêtre. Limites reportées : banques supplémentaires (SF3 de la version web) pas
+  encore lues par le moteur Rust (phase D), changement d'appareil audio à chaud (phase O), la
+  programmation des notes reste dans l'interface (phase B).
 
 ## Banques de sons retenues (recherche du 2026-11-18)
 

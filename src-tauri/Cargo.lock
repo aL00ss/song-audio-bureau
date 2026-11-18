@@ -2021,6 +2021,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "moteur"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "rtrb",
+ "rustysynth",
+]
+
+[[package]]
 name = "muda"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3245,10 +3254,8 @@ dependencies = [
 name = "song-audio-bureau"
 version = "0.1.0"
 dependencies = [
- "cpal",
  "log",
- "rtrb",
- "rustysynth",
+ "moteur",
  "serde",
  "serde_json",
  "tauri",

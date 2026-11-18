@@ -4,9 +4,11 @@
 import { WorkletSynthesizer } from 'spessasynth_lib'
 import urlProcesseur from 'spessasynth_lib/dist/spessasynth_processor.min.js?url'
 import { attribuerCanauxMidi, type Projet } from '../projet/modele'
+import type { MoteurAudio } from './interface'
+import { routageMixer } from './routage'
+import type { ModeLecture } from './transport'
 import { BANQUE_GM, type BanqueSupplementaire, ordreDePriorite } from './banques'
 import { Mixeur, type NiveauStereo } from './mixer'
-import type { Destination, Horloge } from './transport'
 
 const CC_VOLUME = 7
 const CC_PAN = 10
@@ -44,20 +46,6 @@ async function telecharger(url: string, progression?: Progression): Promise<Arra
   return resultat.buffer
 }
 
-/**
- * Routage du mixer : canal MIDI (sortie séparée, 16 au plus) -> piste qui le reçoit (0 = maître
- * si la piste demandée n'existe pas).
- */
-export function routageMixer(projet: Projet): Map<number, number> {
-  const attribution = attribuerCanauxMidi(projet.canaux)
-  const pistes = new Set(projet.mixage.map((p) => p.index))
-  const routage = new Map<number, number>()
-  for (const canal of projet.canaux) {
-    const midi = attribution.get(canal.id)
-    if (midi !== undefined) routage.set(midi % SORTIES_SEPAREES, pistes.has(canal.pisteMixage) ? canal.pisteMixage : 0)
-  }
-  return routage
-}
 
 /**
  * Porte le synthétiseur à `total` canaux MIDI. Le processeur annonce les réglages initiaux d'un
@@ -76,7 +64,10 @@ export function creerCanaux(synth: WorkletSynthesizer, total: number): void {
   synth.setSystemParameter('eventsEnabled', true)
 }
 
-export class MoteurSon implements Destination, Horloge {
+export { routageMixer }
+
+export class MoteurSon implements MoteurAudio {
+  readonly banquesSupplementaires = true
   readonly contexte: AudioContext
   readonly synth: WorkletSynthesizer
   /** Copie de la banque de sons (l'original est transféré au processeur), pour l'export WAV. */
@@ -158,7 +149,7 @@ export class MoteurSon implements Destination, Horloge {
       this.synth.controllerChange(midi, CC_CHORUS, 0)
     }
     this.mixeur.configurer(projet.mixage)
-    this.mixeur.router(routageMixer(projet))
+    this.mixeur.router(routageMixer(projet, SORTIES_SEPAREES))
   }
 
   /**
@@ -189,6 +180,11 @@ export class MoteurSon implements Destination, Horloge {
   /** Banques chargées, de la plus prioritaire à GeneralUser GS (pour un rendu hors ligne). */
   banquesPourRendu(): ArrayBuffer[] {
     return ordreDePriorite(this.#supplementaires.keys()).map((id) => (id === BANQUE_GM ? this.banque : this.#supplementaires.get(id)!).slice(0))
+  }
+
+  async exporterWav(projet: Projet, mode: ModeLecture): Promise<Blob> {
+    const { exporterWav } = await import('./exportWav')
+    return exporterWav(this, projet, mode)
   }
 
   /** Crête stéréo d'une piste du mixer (0 = maître). */

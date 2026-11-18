@@ -7,8 +7,9 @@ import { get as lireStockage, set as ecrireStockage } from 'idb-keyval'
 import { produce } from 'immer'
 import { create } from 'zustand'
 import { banquesNecessaires } from '../audio/banques'
-import { exporterWav } from '../audio/exportWav'
+import type { MoteurAudio } from '../audio/interface'
 import { MoteurSon } from '../audio/moteur'
+import { MoteurNatif } from '../audio/natif'
 import { type EtatTransport, type ModeLecture, Transport } from '../audio/transport'
 import { creerDemo } from '../projet/demo'
 import { depuisMidi } from '../projet/importMidi'
@@ -131,7 +132,10 @@ export function projetVide(): Projet {
   return playlist.ajouterClip(projet, projet.patternActif, 0, 0).projet
 }
 
-let moteur: MoteurSon | null = null
+let moteur: MoteurAudio | null = null
+
+/** Dans l'application de bureau, le son est rendu par le moteur Rust. */
+export const estBureau = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 let transport: Transport | null = null
 /** Chargement en cours : un second appel (React StrictMode) attend le même, sans créer un autre contexte audio. */
 let initialisation: Promise<void> | null = null
@@ -155,7 +159,7 @@ export const useStudio = create<EtatStudio>()((set, get) => {
 
   /** Lance le téléchargement des banques supplémentaires utiles au projet (une fois chacune). */
   const chargerBanques = (projet: Projet) => {
-    if (!moteur) return
+    if (!moteur?.banquesSupplementaires) return
     const m = moteur
     for (const banque of banquesNecessaires(projet)) {
       const deja = get().banques[banque.id]
@@ -234,15 +238,20 @@ export const useStudio = create<EtatStudio>()((set, get) => {
         try {
           // la sauvegarde se lit pendant le téléchargement des sons
           const restauration = restaurer()
-          moteur = await MoteurSon.creer(URL_BANQUE, (recus, total) => {
-            set({ chargement: { phase: 'son', progression: total ? recus / total : 0 } })
-          })
+          moteur = estBureau()
+            ? await MoteurNatif.creer()
+            : await MoteurSon.creer(URL_BANQUE, (recus, total) => {
+                set({ chargement: { phase: 'son', progression: total ? recus / total : 0 } })
+              })
           transport = new Transport(moteur, moteur)
           transport.surEtat((etat) => set({ transport: etat }))
           await restauration
           synchroniser(get().projet)
           sauvegarderAutomatiquement()
           set({ chargement: { phase: 'pret' } })
+          if (moteur instanceof MoteurNatif && moteur.sortie === null) {
+            set({ message: 'Aucune sortie audio détectée : branchez un casque ou des enceintes, puis relancez song-audio.' })
+          }
           const disposition = await detecterDisposition()
           set({ clavier: { ...get().clavier, disposition } })
         } catch (erreur) {
@@ -491,7 +500,7 @@ export const useStudio = create<EtatStudio>()((set, get) => {
       if (!moteur || get().exportEnCours) return null
       set({ exportEnCours: true, message: null })
       try {
-        return await exporterWav(moteur, get().projet, get().mode)
+        return await moteur.exporterWav(get().projet, get().mode)
       } catch (erreur) {
         console.error(erreur)
         set({ message: "L'export WAV a échoué." })

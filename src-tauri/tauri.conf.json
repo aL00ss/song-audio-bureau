@@ -38,6 +38,10 @@
     ],
     "category": "Music",
     "shortDescription": "Studio de musique",
-    "copyright": "GPL-3.0"
+    "copyright": "GPL-3.0",
+    "resources": {
+      "banques/GeneralUser-GS.sf2": "banques/GeneralUser-GS.sf2",
+      "banques/GeneralUser-GS-LICENCE.txt": "banques/GeneralUser-GS-LICENCE.txt"
+    }
   }
 }

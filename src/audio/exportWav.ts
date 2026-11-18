@@ -9,7 +9,8 @@ import { longueurExport, versMidiOctets } from '../projet/exportMidi'
 import type { Projet } from '../projet/modele'
 import type { ModeLecture } from './transport'
 import { Mixeur } from './mixer'
-import { creerCanaux, type MoteurSon, routageMixer } from './moteur'
+import { creerCanaux, type MoteurSon } from './moteur'
+import { routageMixer } from './routage'
 
 export const FREQUENCE_EXPORT = 44100
 /** Secondes ajoutées après la dernière mesure, pour laisser les sons et la réverbération s'éteindre. */
@@ -33,7 +34,7 @@ export async function rendre(moteur: MoteurSon, projet: Projet, mode: ModeLectur
   creerCanaux(synth, moteur.synth.midiChannels.length)
   const mixeur = new Mixeur(contexte, synth, contexte.destination)
   mixeur.configurer(projet.mixage)
-  mixeur.router(routageMixer(projet))
+  mixeur.router(routageMixer(projet, 16))
   // l'état des canaux du studio (instruments, batteries, volumes, panoramiques, réverbération
   // interne coupée) est repris tel quel
   const instantane = await moteur.synth.getSnapshot()
