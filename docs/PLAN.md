@@ -32,5 +32,11 @@ dans la section « Étape 10 » du plan de song-audio (recherche du 2026-11-18).
 
 ## Avancement
 
-- [ ] 10.0 Fondations : dépôt créé (licence, plan) ; reste à installer Rust et les outils C++
-  de Microsoft (MSVC, SDK Windows) sur la machine de développement.
+- [x] **10.0 Fondations** : application Tauri 2 qui affiche l'interface de song-audio (le son
+  passe encore par SpessaSynth dans WebView2) ; commande Rust `version` ; icône originale ;
+  GeneralUser GS en SF2 (32 Mo) inclus pour le futur moteur Rust ; tests de la vraie fenêtre
+  par Playwright branché sur WebView2 (`npm run test:bureau`) ; CI sur Windows, macOS et
+  Linux. Poste de développement Windows sans droits administrateur : chaîne Rust
+  `x86_64-pc-windows-gnu` (`rustup override`) et MinGW-w64 portable (WinLibs : GCC, CMake) dans
+  `C:\Users\user\outils\mingw64` ; la CI, elle, utilise MSVC. Le type de crate `cdylib`
+  (mobile) est retiré : il dépasse la limite d'exports du lieur GNU.
