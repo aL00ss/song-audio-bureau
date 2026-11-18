@@ -106,7 +106,7 @@ impl TabViewer for Vue<'_> {
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Panneau) {
         match tab {
-            Panneau::Navigateur => self.studio.instruments(ui),
+            Panneau::Navigateur => self.studio.navigateur(ui),
             Panneau::Rack => self.studio.rack(ui),
             autre => {
                 ui.add_space(12.0);

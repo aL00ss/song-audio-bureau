@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod coquille;
+pub mod navigateur;
 pub mod pont;
 pub mod theme;
 

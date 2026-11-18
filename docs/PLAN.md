@@ -119,6 +119,21 @@ passent par egui_kittest.
   image, graphe mis en place en 51 ms. Tests : rendu parallèle identique au rendu sur un seul
   cœur, chaque tâche exécutée une fois sur 3 000 blocs, 300 canaux et 300 pistes, réveil et
   sommeil des canaux.
+- [x] **N2 — Navigateur** : import MIDI en Rust (midly) **identique note par note à la version
+  web** sur les 5 morceaux fournis (référence produite par l'import web lui-même, 8 700
+  notes), plus une amélioration : une piste qui mélange plusieurs canaux (format 0) donne un
+  instrument par canal ; recherche en ligne BitMidi (au moins 2 lettres, 350 ms après la
+  frappe, réponses périmées ignorées, 30 résultats, mêmes messages que la version web), clic
+  sur un résultat : téléchargement dans un fil à part, import, lecture ; morceaux du domaine
+  public (catalogue partagé avec la version web) ; liste des fichiers du disque (dossier
+  Musique par défaut, lu à l'ouverture, « Dossier… », « Actualiser »), « Ouvrir un fichier… »
+  et fichiers glissés sur la fenêtre (projet ou MIDI) ; instruments et synthés intégrés.
+  Garde-fou ajouté : un test vérifie que la police dessine chaque caractère des textes affichés
+  (il a trouvé « ▸ » et « ♯ », remplacés). 23 tests `projet`, 5 tests d'interface du
+  navigateur (faux réseau : une seule recherche pour plusieurs frappes, panne, réponse vide),
+  1 test sur le vrai BitMidi (lancé à la main avec RESEAU=1 : réussi). Reportés à la phase N :
+  écoute avant d'ajouter (avec les échantillons), favoris et étiquettes, contenu du projet,
+  glisser du navigateur vers le rack.
 
 ## Phases
 

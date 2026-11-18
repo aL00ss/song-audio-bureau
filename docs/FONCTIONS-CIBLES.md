@@ -65,7 +65,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Projet compressé avec ses échantillons | Export project data files / ZIP | Archive de projet avec ses sons | ⬜ | D |
 | Infos du projet (titre, auteur, genre, notes) | Project info | Fiche du projet | ⬜ | N8 |
 | Sauvegarde du projet en ligne | FL Cloud backup (2026) | Dossier synchronisé au choix (local, Git, nuage personnel) | ⛔ → dossier synchronisé | O |
-| Import de projets d'autres logiciels | (partiel) | Import MIDI, puis formats ouverts (DAWproject) | 🟡 (MIDI) | N2, N |
+| Import de projets d'autres logiciels | (partiel) | Import MIDI (un instrument par canal), puis formats ouverts (DAWproject) | 🟡 (MIDI ✅) | N2, N |
 | Format ouvert compatible web | — | Même JSON que la version web | ✅ | N0 |
 
 ## 3. Transport, temps, enregistrement
@@ -94,15 +94,15 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 
 | Fonction | Référence FL Studio | Chez song-audio | État | Phase |
 |---|---|---|---|---|
-| Arborescence des dossiers et fichiers | Browser | Navigateur de fichiers | ⬜ | N2 |
-| Écoute avant d'ajouter, au tempo | Preview, tempo sync | Écoute synchronisée | ⬜ | N2 |
-| Glisser-déposer partout | Drag and drop | Glisser vers rack, arrangement, piano roll | ⬜ | N2 |
-| Favoris, recherche, étiquettes | Favorites, search, tags | Favoris, recherche, étiquettes | ⬜ | N2 |
-| Contenu du projet (sons, greffons, patterns) | Current project | Contenu du projet | ⬜ | N2 |
+| Arborescence des dossiers et fichiers | Browser | Navigateur de fichiers | ✅ | N2 |
+| Écoute avant d'ajouter, au tempo | Preview, tempo sync | Écoute synchronisée | ⬜ | D, N |
+| Glisser-déposer partout | Drag and drop | Glisser vers rack, arrangement, piano roll | 🟡 (fichiers sur la fenêtre) | N2, N |
+| Favoris, recherche, étiquettes | Favorites, search, tags | Favoris, recherche, étiquettes | ⬜ | N |
+| Contenu du projet (sons, greffons, patterns) | Current project | Contenu du projet | ⬜ | N |
 | Base de greffons et de préréglages | Plugin database | Base des instruments et effets | ⬜ | M, N |
 | Bibliothèque de sons en ligne | FL Cloud Sounds (2 millions de sons) | Banques libres téléchargées (CC0, CC BY) | ⛔ → banques libres | D |
 | Trouver des sons semblables | Find similar samples (2025.2) | Recherche par ressemblance (analyse locale) | ⬜ | N |
-| Recherche de morceaux MIDI en ligne | — | Recherche BitMidi | 🌐 | N2 |
+| Recherche de morceaux MIDI en ligne | — | Recherche BitMidi | ✅ | N2 |
 | Instruments et synthés intégrés à ajouter | Add channel | Liste des instruments et synthés | ✅ | N0 |
 | Démarrage par boucles assorties | Loop Starter | Démarreur d'idées (boucles et sons assortis, banques libres) | ⬜ | N |
 | Remixer un morceau (séparation en pistes) | Remix a Song (2026) | Remix : séparation en pistes dans l'arrangement | ⬜ | L |

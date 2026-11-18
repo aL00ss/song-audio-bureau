@@ -3,9 +3,12 @@
 
 pub mod demo;
 pub mod gm;
+pub mod import_midi;
 pub mod lecture;
 pub mod modele;
+pub mod morceaux;
 pub mod pas;
+pub mod recherche;
 pub mod serialisation;
 pub mod synthes;
 pub mod temps;

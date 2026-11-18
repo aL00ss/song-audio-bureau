@@ -91,7 +91,8 @@ pub fn nom_son_batterie(note: u8) -> String {
     }
 }
 
-const NOMS_NOTES: [&str; 12] = ["Do", "Do♯", "Ré", "Ré♯", "Mi", "Fa", "Fa♯", "Sol", "Sol♯", "La", "La♯", "Si"];
+// « # » plutôt que « ♯ » : la police de l'application n'a pas le dièse musical
+const NOMS_NOTES: [&str; 12] = ["Do", "Do#", "Ré", "Ré#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"];
 
 /// Nom français d'une note, octave française (La3 = 440 Hz).
 pub fn nom_note(midi: u8) -> String {

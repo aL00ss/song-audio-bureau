@@ -18,20 +18,37 @@ use projet::temps::{formater_position, formater_secondes, tics_en_secondes};
 use projet::{Projet, SourceCanal};
 
 use crate::coquille::{self, Panneau, Vue};
+use crate::navigateur::{BitMidi, EtatRecherche, Navigateur, Reseau};
+use projet::morceaux::{Morceau, lire_catalogue, nom_court};
+use projet::recherche::formater_ecoutes;
 use crate::{pont, theme};
 use egui_dock::{DockArea, DockState};
 
 /// Clé de la disposition des panneaux dans le stockage de l'application.
 pub const CLE_DISPOSITION: &str = "disposition";
 
-/// Où trouver la banque General MIDI : à côté de l'exécutable, ou dans le dépôt (développement).
-pub fn chemin_banque() -> Option<PathBuf> {
-    const NOM: &str = "banques/GeneralUser-GS.sf2";
+/// Où trouver une ressource (banque, morceaux) : à côté de l'exécutable, ou dans le dépôt
+/// (développement).
+pub fn chemin_ressource(relatif: &str) -> Option<PathBuf> {
+    let depot = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let candidats = [
-        std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(NOM))),
-        Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("../src-tauri").join(NOM)),
+        std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(relatif))),
+        Some(depot.join("public").join(relatif)),
+        Some(depot.join("src-tauri").join(relatif)),
     ];
     candidats.into_iter().flatten().find(|c| c.exists())
+}
+
+pub fn chemin_banque() -> Option<PathBuf> {
+    chemin_ressource("banques/GeneralUser-GS.sf2")
+}
+
+/// Les morceaux fournis (catalogue à côté de l'exécutable ou dans le dépôt).
+pub fn catalogue_des_morceaux() -> Vec<Morceau> {
+    chemin_ressource("morceaux/catalogue.json")
+        .and_then(|c| std::fs::read_to_string(c).ok())
+        .and_then(|t| lire_catalogue(&t).ok())
+        .unwrap_or_default()
 }
 
 pub struct Studio {
@@ -49,11 +66,17 @@ pub struct Studio {
     envoye: Option<(Projet, ModeLecture)>,
     /// Disposition des panneaux (sortie le temps de dessiner les onglets).
     pub dock: Option<DockState<Panneau>>,
+    pub navigateur: Navigateur,
 }
 
 impl Studio {
     /// Démarre le moteur (sortie audio, ou horloge silencieuse sans carte son) avec la banque.
     pub fn new(banque: Option<Arc<SoundFont>>) -> Self {
+        Self::avec_reseau(banque, Arc::new(BitMidi::default()))
+    }
+
+    /// Avec un accès au réseau choisi (les tests en donnent un faux).
+    pub fn avec_reseau(banque: Option<Arc<SoundFont>>, reseau: Arc<dyn Reseau>) -> Self {
         let (moteur, message) = match banque.map(Moteur::demarrer) {
             Some(Ok(m)) => {
                 let message = m.sortie().is_none().then(|| "Aucune sortie audio détectée : branchez un casque ou des enceintes, puis relancez song-audio.".to_string());
@@ -75,6 +98,75 @@ impl Studio {
             moteur,
             envoye: None,
             dock: Some(coquille::disposition_par_defaut()),
+            navigateur: Navigateur::new(reseau, catalogue_des_morceaux()),
+        }
+    }
+
+    // ---------------------------------------------------------------- morceaux et fichiers
+
+    /// Remplace le projet par un fichier MIDI ; faux (et un message) s'il est illisible ou vide.
+    pub fn importer_midi(&mut self, octets: &[u8], nom: &str, jouer: bool) -> bool {
+        match projet::import_midi::depuis_midi(octets, nom) {
+            Ok(p) if p.canaux.is_empty() => {
+                self.message = Some(format!("« {nom} » ne contient aucune note."));
+                false
+            }
+            Ok(p) => {
+                self.remplacer_projet(p, None);
+                self.modifie = true; // pas encore enregistré comme projet
+                self.message = None;
+                if jouer {
+                    self.basculer_lecture();
+                }
+                true
+            }
+            Err(e) => {
+                self.message = Some(format!("Fichier MIDI illisible : {nom} ({e})"));
+                false
+            }
+        }
+    }
+
+    /// Charge un morceau fourni et le joue.
+    pub fn charger_morceau(&mut self, morceau: &Morceau) {
+        match chemin_ressource(&morceau.fichier).and_then(|c| std::fs::read(c).ok()) {
+            Some(octets) => {
+                self.importer_midi(&octets, &morceau.titre, true);
+            }
+            None => self.message = Some(format!("Impossible de charger « {} » (fichier introuvable ou illisible).", morceau.titre)),
+        }
+    }
+
+    /// Ouvre un fichier du disque : un projet (.json) ou un fichier MIDI (importé sans jouer).
+    pub fn ouvrir_fichier(&mut self, chemin: &Path) {
+        let nom = chemin.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        if nom.to_lowercase().ends_with(".json") {
+            self.ouvrir(chemin);
+            return;
+        }
+        let titre = nom.trim_end_matches(".midi").trim_end_matches(".MIDI").trim_end_matches(".mid").trim_end_matches(".MID").to_string();
+        match std::fs::read(chemin) {
+            Ok(octets) => {
+                self.importer_midi(&octets, &titre, false);
+            }
+            Err(e) => self.message = Some(format!("Fichier illisible : {nom} ({e})")),
+        }
+    }
+
+    /// Relève les recherches et téléchargements finis (appelé à chaque image).
+    pub fn interroger_navigateur(&mut self, ctx: Option<&egui::Context>) {
+        if self.navigateur.avancer(ctx) {
+            if let Some(c) = ctx {
+                c.request_repaint_after(std::time::Duration::from_millis(60));
+            }
+        }
+        for (nom, resultat) in self.navigateur.relever() {
+            match resultat {
+                Ok(octets) => {
+                    self.importer_midi(&octets, &nom, true);
+                }
+                Err(_) => self.message = Some(format!("Impossible de charger « {nom} » (fichier introuvable ou illisible).")),
+            }
         }
     }
 
@@ -346,8 +438,115 @@ impl Studio {
         });
     }
 
+    /// Le panneau Navigateur : recherche en ligne, morceaux, fichiers, instruments.
+    pub fn navigateur(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            self.recherche_en_ligne(ui, &ctx);
+            ui.add_space(8.0);
+            self.morceaux(ui);
+            ui.add_space(8.0);
+            self.fichiers(ui);
+            ui.add_space(8.0);
+            self.instruments(ui);
+        });
+    }
+
+    fn recherche_en_ligne(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.label(RichText::new("RECHERCHER EN LIGNE").small().strong().color(theme::DISCRET));
+        let champ = egui::TextEdit::singleline(&mut self.navigateur.requete).hint_text("Chopin, Daft Punk, Gymnopédie…").desired_width(f32::INFINITY);
+        if ui.add(champ).on_hover_text("Rechercher un fichier MIDI en ligne").changed() {
+            self.navigateur.requete_changee();
+        }
+        let requete = self.navigateur.requete.trim().to_string();
+        match self.navigateur.recherche.clone() {
+            EtatRecherche::Repos => {}
+            EtatRecherche::EnCours => {
+                ui.label(RichText::new("Recherche…").color(theme::DISCRET));
+            }
+            EtatRecherche::Erreur => {
+                ui.label(RichText::new("Recherche indisponible : vérifiez la connexion.").color(theme::ACCENT));
+            }
+            EtatRecherche::Resultats(r) if r.is_empty() => {
+                ui.label(RichText::new(format!("Aucun fichier trouvé pour « {requete} ».")).color(theme::DISCRET));
+            }
+            EtatRecherche::Resultats(resultats) => {
+                let occupe = self.navigateur.en_chargement.is_some();
+                for r in &resultats {
+                    ui.horizontal(|ui| {
+                        let en_cours = self.navigateur.en_chargement.as_deref() == Some(r.titre.as_str());
+                        let bouton = egui::Button::new(RichText::new(format!("{} {}", if en_cours { "…" } else { "⏵" }, r.titre))).frame(false);
+                        if ui.add_enabled(!occupe, bouton).on_hover_text(format!("{} — charger et jouer", r.nom_fichier)).clicked() {
+                            self.navigateur.telecharger(r, Some(ctx));
+                        }
+                        ui.label(RichText::new(formater_ecoutes(r.ecoutes)).small().color(theme::DISCRET));
+                    });
+                }
+            }
+        }
+        ui.label(RichText::new("Fichiers de BitMidi : chaque piste garde son instrument.").small().color(theme::DISCRET));
+    }
+
+    fn morceaux(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("MORCEAUX").small().strong().color(theme::DISCRET));
+        if ui.button("+ Nouveau projet").on_hover_text("Projet vide avec un kit de batterie").clicked() {
+            self.remplacer_projet(projet_vide(), None);
+        }
+        if ui.button("⏵ Démo (4 instruments)").clicked() {
+            self.remplacer_projet(projet::demo::creer_demo(), None);
+        }
+        for m in self.navigateur.morceaux.clone() {
+            ui.horizontal(|ui| {
+                if ui.add(egui::Button::new(format!("⏵ {}", m.titre)).frame(false)).on_hover_text(format!("{} — {} ({})\n{}", m.compositeur, m.oeuvre, m.annee, m.credit)).clicked() {
+                    self.charger_morceau(&m);
+                }
+                ui.label(RichText::new(nom_court(&m.compositeur)).small().color(theme::DISCRET));
+            });
+        }
+    }
+
+    fn fichiers(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("FICHIERS").small().strong().color(theme::DISCRET));
+        ui.horizontal_wrapped(|ui| {
+            if ui.small_button("Ouvrir un fichier…").on_hover_text("Un projet (.json) ou un fichier MIDI (.mid)").clicked() {
+                if let Some(c) = rfd::FileDialog::new().add_filter("Projet ou MIDI", &["json", "mid", "midi"]).pick_file() {
+                    self.ouvrir_fichier(&c);
+                }
+            }
+            if ui.small_button("Dossier…").on_hover_text("Choisir le dossier affiché").clicked() {
+                if let Some(d) = rfd::FileDialog::new().pick_folder() {
+                    self.navigateur.changer_dossier(d);
+                }
+            }
+            if ui.small_button("Actualiser").clicked() {
+                self.navigateur.actualiser();
+            }
+        });
+        ui.label(RichText::new("ou glissez un fichier sur la fenêtre").small().color(theme::DISCRET));
+        let racine = self.navigateur.dossier.clone();
+        let titre = racine.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| racine.display().to_string());
+        egui::CollapsingHeader::new(titre).id_salt(&racine).default_open(false).show(ui, |ui| self.dossier(ui, &racine, 0));
+    }
+
+    /// Un dossier de la liste des fichiers (lu seulement quand on l'ouvre).
+    fn dossier(&mut self, ui: &mut egui::Ui, dossier: &Path, profondeur: usize) {
+        let entrees = self.navigateur.contenu(dossier);
+        if entrees.is_empty() {
+            ui.label(RichText::new("(aucun fichier MIDI ni projet)").small().color(theme::DISCRET));
+        }
+        for e in entrees {
+            if e.dossier {
+                if profondeur < 12 {
+                    egui::CollapsingHeader::new(&e.nom).id_salt(&e.chemin).default_open(false).show(ui, |ui| self.dossier(ui, &e.chemin, profondeur + 1));
+                }
+            } else if ui.add(egui::Button::new(&e.nom).frame(false)).on_hover_text(e.chemin.display().to_string()).clicked() {
+                self.ouvrir_fichier(&e.chemin);
+            }
+        }
+    }
+
     pub fn instruments(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Instruments");
+        ui.label(RichText::new("INSTRUMENTS").small().strong().color(theme::DISCRET));
         if ui.button("+ Batterie").on_hover_text("Une ligne de batterie, en pas à pas").clicked() {
             self.ajouter_canal(OptionsCanal { batterie: true, ..Default::default() });
         }
@@ -358,17 +557,15 @@ impl Studio {
                 }
             }
         });
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for (f, famille) in FAMILLES.iter().enumerate() {
-                egui::CollapsingHeader::new(*famille).show(ui, |ui| {
-                    for programme in (f * 8) as u8..(f * 8 + 8) as u8 {
-                        if ui.button(format!("+ {}", nom_instrument(programme))).clicked() {
-                            self.ajouter_canal(OptionsCanal { programme, ..Default::default() });
-                        }
+        for (f, famille) in FAMILLES.iter().enumerate() {
+            egui::CollapsingHeader::new(*famille).show(ui, |ui| {
+                for programme in (f * 8) as u8..(f * 8 + 8) as u8 {
+                    if ui.button(format!("+ {}", nom_instrument(programme))).clicked() {
+                        self.ajouter_canal(OptionsCanal { programme, ..Default::default() });
                     }
-                });
-            }
-        });
+                }
+            });
+        }
     }
 
     pub fn rack(&mut self, ui: &mut egui::Ui) {
@@ -487,6 +684,12 @@ impl eframe::App for Studio {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.raccourcis(&ctx);
+        self.interroger_navigateur(Some(&ctx));
+        // fichiers glissés sur la fenêtre : projet ou MIDI
+        let deposes: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|c| c.is_absolute()).collect());
+        for chemin in deposes {
+            self.ouvrir_fichier(&chemin);
+        }
         egui::Panel::top("transport").show(ui, |ui| {
             ui.add_space(4.0);
             self.barre_transport(ui);

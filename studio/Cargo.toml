@@ -13,6 +13,7 @@ egui_dock = { version = "0.21", features = ["serde"] }
 moteur = { version = "0.1.0", path = "../moteur" }
 projet = { version = "0.1.0", path = "../projet" }
 rfd = "0.18.0"
+ureq = "3.5.2"
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["eframe"] }
