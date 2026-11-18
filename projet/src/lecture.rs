@@ -1,7 +1,7 @@
 //! Ce que le transport doit jouer : les notes du pattern actif (mode pattern) ou de tout
 //! l'arrangement (mode morceau), sur leurs canaux MIDI, avec swing, muets et solos appliqués.
 
-use crate::modele::{Pattern, Projet, attribuer_canaux_midi, canaux_audibles};
+use crate::modele::{Pattern, Projet, canaux_audibles};
 use crate::pas::decalage_swing;
 use crate::temps::arrondir_a_la_mesure;
 
@@ -14,23 +14,26 @@ pub enum ModeLecture {
     Morceau,
 }
 
-/// Une note à jouer : début et fin en tics depuis le début de la boucle, canal MIDI.
+/// Une note à jouer : début et fin en tics depuis le début de la boucle ; `canal` est le rang
+/// du canal dans le projet (le numéro du canal dans le moteur, sans limite).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NoteJouee {
     pub debut: u32,
     pub fin: u32,
-    pub canal: u8,
+    pub canal: u32,
     pub hauteur: u8,
     pub velocite: u8,
 }
 
 /// Notes d'un pattern. Les notes qui dépassent la fin sont coupées à la fin.
 pub fn notes_du_pattern(projet: &Projet, pattern: &Pattern) -> Vec<NoteJouee> {
-    let midi = attribuer_canaux_midi(&projet.canaux).unwrap_or_default();
     let audibles = canaux_audibles(&projet.canaux);
     let mut notes = Vec::new();
-    for canal in &projet.canaux {
-        let (Some(&c), true) = (midi.get(&canal.id), audibles.contains(canal.id.as_str())) else { continue };
+    for (rang, canal) in projet.canaux.iter().enumerate() {
+        if !audibles.contains(canal.id.as_str()) {
+            continue;
+        }
+        let c = rang as u32;
         for n in pattern.notes.get(&canal.id).map(Vec::as_slice).unwrap_or(&[]) {
             if n.tic >= pattern.longueur {
                 continue;
@@ -90,7 +93,7 @@ mod tests {
         let demo = creer_demo();
         let (notes, longueur) = notes_a_jouer(&demo, ModeLecture::Pattern);
         assert_eq!(longueur, 4 * 384);
-        assert!(notes.iter().any(|n| n.canal == 9 && n.hauteur == 49 && n.debut == 0), "crash de batterie sur le canal 10");
+        assert!(notes.iter().any(|n| n.canal == 3 && n.hauteur == 49 && n.debut == 0), "crash sur la batterie (4e canal)");
         assert!(notes.windows(2).all(|w| w[0].debut <= w[1].debut));
 
         let mut p = creer_projet("Essai");
@@ -113,7 +116,7 @@ mod tests {
         definir_pas(&mut p, &b, 0, Some(true));
         p.swing = 1.0;
         let (notes, _) = notes_a_jouer(&p, ModeLecture::Pattern);
-        assert_eq!(notes.iter().find(|n| n.canal == 9).unwrap().debut, 36, "pas impair retardé d'un demi-pas");
+        assert_eq!(notes.iter().find(|n| n.canal == 0).unwrap().debut, 36, "pas impair retardé d'un demi-pas");
         p.canal_mut(&b).unwrap().muet = true;
         assert_eq!(notes_a_jouer(&p, ModeLecture::Pattern).0.len(), 1);
     }

@@ -17,6 +17,7 @@ pub fn rendre(
     duree: f64,
 ) -> Result<(Vec<f32>, Vec<f32>), String> {
     let mut noyau = Noyau::new(banque, frequence)?;
+    noyau.preparer(configuration)?;
     noyau.configurer(configuration);
     for e in evenements {
         noyau.programmer(*e);
@@ -40,6 +41,7 @@ pub fn rendre_session(
     queue: f64,
 ) -> Result<(Vec<f32>, Vec<f32>), String> {
     let mut noyau = Noyau::new(banque, frequence)?;
+    noyau.preparer(configuration)?;
     noyau.configurer(configuration);
     let mut transport = Transport::new();
     let mut session = session.clone();

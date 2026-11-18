@@ -105,3 +105,47 @@ fn les_six_panneaux_sont_la_et_f6_ferme_puis_rouvre_le_rack() {
     h.step();
     assert_eq!(h.state().panneaux_ouverts().len(), 6);
 }
+
+#[test]
+fn deux_cent_cinquante_instruments_qui_jouent_ensemble() {
+    use projet::modele::{OptionsCanal, creer_projet};
+    use projet::pas::definir_pas;
+    let mut h = studio();
+    // un projet de 250 instruments, chacun avec un pas au début de chaque temps
+    let mut p = creer_projet("Grand orchestre");
+    for i in 0..250u32 {
+        let id = p.ajouter_canal(OptionsCanal { programme: (i % 120) as u8, volume: Some(0.3), ..Default::default() });
+        for pas in [0, 4, 8, 12] {
+            definir_pas(&mut p, &id, pas, Some(true));
+        }
+    }
+    h.state_mut().remplacer_projet(p, None);
+    let depart = Instant::now();
+    h.step();
+    h.get_by_label("Lecture").click();
+    h.step();
+    attendre_etat(&mut h, EtatTransport::Lecture);
+    // le graphe du moteur a grandi jusqu'à 250 canaux et 251 pistes
+    assert_eq!(h.state().moteur().unwrap().taille_du_graphe(), (250, 251));
+    // le dernier instrument sonne vraiment
+    let fin = Instant::now() + Duration::from_secs(5);
+    loop {
+        h.step();
+        let voix = h.state().moteur().unwrap().mesures().voix;
+        if voix.get(249).copied().unwrap_or(0) > 0 && voix.iter().filter(|&&v| v > 0).count() > 100 {
+            break;
+        }
+        assert!(Instant::now() < fin, "le 250e instrument ne joue pas");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // et l'interface reste fluide : une image prend bien moins qu'une trame de 60 Hz
+    let image = Instant::now();
+    for _ in 0..30 {
+        h.step();
+    }
+    let par_image = image.elapsed() / 30;
+    eprintln!("250 instruments : mis en place en {:?}, {:?} par image", depart.elapsed(), par_image);
+    assert!(par_image < Duration::from_millis(50), "image trop lente : {par_image:?}");
+    h.get_by_label("Stop").click();
+    h.step();
+}

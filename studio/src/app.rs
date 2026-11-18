@@ -162,7 +162,9 @@ impl Studio {
             return;
         }
         if let Some(m) = &mut self.moteur {
-            m.configurer(pont::configuration(&self.projet));
+            if let Err(e) = m.configurer(pont::configuration(&self.projet)) {
+                self.message = Some(format!("Le moteur n'a pas pu ajouter d'instrument : {e}"));
+            }
             m.definir_session(pont::session(&self.projet, self.mode));
         }
         self.envoye = Some((self.projet.clone(), self.mode));
@@ -185,16 +187,10 @@ impl Studio {
     }
 
     pub fn ajouter_canal(&mut self, options: OptionsCanal) {
-        let mut essai = self.projet.clone();
-        let id = essai.ajouter_canal(options);
-        match projet::modele::attribuer_canaux_midi(&essai.canaux) {
-            Ok(_) => {
-                self.projet = essai;
-                self.modifie = true;
-                self.canal_selectionne = Some(id);
-            }
-            Err(e) => self.message = Some(e),
-        }
+        // aucune limite : le moteur fait grandir son graphe à la demande
+        let id = self.projet.ajouter_canal(options);
+        self.modifie = true;
+        self.canal_selectionne = Some(id);
     }
 
     pub fn ouvrir(&mut self, chemin: &Path) {
@@ -379,18 +375,20 @@ impl Studio {
         let pattern = self.projet.pattern_actif().clone();
         let pas_courant = (self.etat_transport() == EtatTransport::Lecture).then(|| (self.position() / 24.0) as usize);
         let voix: Vec<u32> = self.moteur.as_ref().map(|m| m.mesures().voix).unwrap_or_default();
-        let midi = projet::modele::attribuer_canaux_midi(&self.projet.canaux).unwrap_or_default();
         ui.horizontal(|ui| {
             ui.label(RichText::new(&pattern.nom).strong());
             ui.label(RichText::new(format!("{} instruments", self.projet.canaux.len())).color(theme::DISCRET));
         });
         ui.separator();
         let canaux = self.projet.canaux.clone();
-        egui::ScrollArea::both().show(ui, |ui| {
-            for canal in &canaux {
+        // liste virtualisée : seules les lignes visibles sont dessinées (des centaines de canaux)
+        let hauteur_ligne = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+        egui::ScrollArea::both().auto_shrink([false, false]).show_rows(ui, hauteur_ligne, canaux.len(), |ui, lignes| {
+            for rang in lignes {
+                let canal = &canaux[rang];
                 ui.horizontal(|ui| {
-                    // témoin d'activité
-                    let actif = midi.get(&canal.id).and_then(|&m| voix.get(m as usize)).copied().unwrap_or(0) > 0;
+                    // témoin d'activité : le canal du moteur est le rang du canal dans le projet
+                    let actif = voix.get(rang).copied().unwrap_or(0) > 0;
                     let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
                     ui.painter().circle_filled(rect.center(), 4.0, if actif { theme::ACTIF } else { theme::BORD });
                     let mut muet = canal.muet;
@@ -418,7 +416,7 @@ impl Studio {
                     }
                     // pas du séquenceur
                     let pas = velocites_des_pas(&pattern, &canal.id, canal.note_defaut);
-                    for (i, &v) in pas.iter().enumerate().take(64) {
+                    for (i, &v) in pas.iter().enumerate() {
                         let taille = Vec2::new(16.0, 20.0);
                         let (rect, reponse) = ui.allocate_exact_size(taille, Sense::click());
                         let groupe_sombre = (i / 4) % 2 == 1;

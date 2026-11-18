@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use moteur::{
-    ActionTransport, CANAUX, Configuration, EtatTransport, Evenement, Message, Moteur, NoteSession, PISTES, ReglageCanal, ReglagePiste,
+    ActionTransport, Configuration, EtatTransport, Evenement, Message, Moteur, NoteSession, ReglageCanal, ReglagePiste,
     Session, SoundFont, TypeSource,
 };
 use serde::{Deserialize, Serialize};
@@ -59,7 +59,10 @@ struct ConfigurationIpc {
 
 impl ConfigurationIpc {
     fn vers_moteur(&self) -> Configuration {
-        let mut c = Configuration::default();
+        // le graphe du moteur n'a pas de limite : il prend la taille de ce que l'interface envoie
+        let canaux = self.canaux.iter().map(|c| c.canal as usize + 1).max().unwrap_or(0);
+        let pistes = self.pistes.iter().map(|p| p.index as usize + 1).max().unwrap_or(1);
+        let mut c = Configuration::avec(canaux, pistes);
         for canal in &self.canaux {
             if let Some(r) = c.canaux.get_mut(canal.canal as usize) {
                 *r = ReglageCanal {
@@ -68,7 +71,7 @@ impl ConfigurationIpc {
                     batterie: canal.batterie,
                     volume: canal.volume,
                     pan: canal.pan,
-                    piste: canal.piste,
+                    piste: canal.piste as u32,
                     source: if canal.source == "soustractif" { TypeSource::Soustractif } else { TypeSource::SoundFont },
                 };
             }
@@ -89,7 +92,7 @@ fn vers_evenement(e: EvenementIpc, frequence: u32) -> Evenement {
     } else {
         Message::NoteOff { hauteur: e.hauteur }
     };
-    Evenement { echantillon, canal: e.canal, message }
+    Evenement { echantillon, canal: e.canal as u32, message }
 }
 
 /// La session telle que l'interface la compile (notes du pattern ou de l'arrangement).
@@ -108,7 +111,7 @@ impl SessionIpc {
             tempo: self.tempo.clamp(10.0, 999.0),
             longueur: self.longueur.max(1),
             temps_par_mesure: self.temps_par_mesure.max(1),
-            notes: self.notes.iter().map(|&(debut, fin, canal, hauteur, velocite)| NoteSession { debut, fin, canal, hauteur, velocite }).collect(),
+            notes: self.notes.iter().map(|&(debut, fin, canal, hauteur, velocite)| NoteSession { debut, fin, canal: canal as u32, hauteur, velocite }).collect(),
             boucler: true,
         }
     }
@@ -139,8 +142,8 @@ struct InfosMoteur {
     frequence: u32,
     /// Appareil de sortie ; None : aucune carte son, le moteur tourne sans rien faire entendre.
     sortie: Option<String>,
-    canaux: usize,
-    pistes: usize,
+    /// Le graphe du moteur n'a pas de limite de canaux ni de pistes.
+    illimite: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -166,7 +169,7 @@ fn moteur_demarrer(etat: State<EtatMoteur>) -> Result<InfosMoteur, String> {
         }
     }
     let m = moteur.as_ref().expect("moteur démarré");
-    Ok(InfosMoteur { frequence: m.frequence(), sortie: m.sortie().map(str::to_string), canaux: CANAUX, pistes: PISTES })
+    Ok(InfosMoteur { frequence: m.frequence(), sortie: m.sortie().map(str::to_string), illimite: true })
 }
 
 fn avec_moteur<T>(etat: &State<EtatMoteur>, action: impl FnOnce(&mut Moteur) -> T) -> Result<T, String> {
@@ -192,7 +195,7 @@ fn moteur_tout_couper(etat: State<EtatMoteur>) -> Result<(), String> {
 #[tauri::command]
 fn moteur_configurer(etat: State<EtatMoteur>, configuration: ConfigurationIpc) -> Result<(), String> {
     let c = configuration.vers_moteur();
-    avec_moteur(&etat, |m| m.configurer(c))
+    avec_moteur(&etat, |m| m.configurer(c))?
 }
 
 #[tauri::command]

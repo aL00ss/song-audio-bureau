@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rustysynth::SoundFont;
 
-use crate::noyau::{BLOC_MAX, CANAUX, Configuration, Evenement, Mesures, Noyau, PISTES};
+use crate::noyau::{BLOC_MAX, Canal, Configuration, Evenement, Mesures, Noyau, Piste, Stockage};
 use crate::transport::{ActionTransport, EtatTransport, Session, SessionPreparee, Transport};
 
 pub enum Commande {
@@ -19,13 +19,24 @@ pub enum Commande {
     ToutCouper,
     Session(Box<SessionPreparee>),
     Transport(ActionTransport),
+    /// Listes plus grandes pour le graphe (préparées hors du fil audio).
+    Stockage(Box<Stockage>),
+    /// Un canal ou une piste, construits hors du fil audio, à installer à leur numéro.
+    InstallerCanal(u32, Box<Canal>),
+    InstallerPiste(u32, Box<Piste>),
 }
 
 /// Ce que le fil audio rend au fil de l'interface pour être libéré hors du fil audio.
 pub enum Dechet {
     Configuration(Box<Configuration>),
     Session(Box<SessionPreparee>),
+    Stockage(Box<Stockage>),
+    Canal(Box<Canal>),
+    Piste(Box<Piste>),
 }
+
+/// Capacité de départ du graphe (le noyau en réserve autant à sa création).
+const CAPACITE_DEPART: usize = 64;
 
 /// État du transport publié par le fil audio.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -51,6 +62,11 @@ pub struct Moteur {
     poubelle: rtrb::Consumer<Dechet>,
     partage: Arc<Partage>,
     frequence: u32,
+    banque: Arc<SoundFont>,
+    /// Capacité des listes du graphe dans le fil audio (canaux, pistes).
+    capacite: (usize, usize),
+    /// Canaux et pistes déjà construits et envoyés (numéros 0..n).
+    installes: (usize, usize),
     /// Nom de l'appareil de sortie, ou None : pas de carte son, horloge silencieuse.
     sortie: Option<String>,
     /// Abandonner cet émetteur arrête le fil qui garde le flux audio ouvert.
@@ -61,15 +77,16 @@ impl Moteur {
     /// Ouvre la sortie audio par défaut et démarre le rendu.
     pub fn demarrer(banque: Arc<SoundFont>) -> Result<Moteur, String> {
         let (envoi_commandes, commandes) = rtrb::RingBuffer::<Commande>::new(16384);
-        let (envoi_poubelle, poubelle) = rtrb::RingBuffer::<Dechet>::new(64);
+        let (envoi_poubelle, poubelle) = rtrb::RingBuffer::<Dechet>::new(4096);
         let partage = Arc::new(Partage {
             horloge: AtomicU64::new(0),
-            mesures: Mutex::new(Mesures { cretes: vec![[0.0; 2]; PISTES], voix: vec![0; CANAUX] }),
+            mesures: Mutex::new(Mesures { cretes: vec![[0.0; 2]; 1], voix: Vec::new() }),
             lecture: Mutex::new(EtatLecture { etat: EtatTransport::Arret, position: 0.0, position_absolue: 0.0, horloge: 0, tempo: 120.0, longueur: 384 }),
         });
         let (arret, attente) = mpsc::channel::<()>();
         let (pret, demarrage) = mpsc::channel::<Result<(u32, Option<String>), String>>();
         let partage_audio = partage.clone();
+        let banque_audio = banque.clone();
 
         // Le flux cpal n'est pas transférable d'un fil à l'autre sur toutes les plateformes :
         // un fil dédié le crée, le garde, et le ferme quand le moteur est abandonné.
@@ -87,7 +104,7 @@ impl Moteur {
                 match trouver_sortie() {
                     Ok((appareil, nom, config)) => {
                         let frequence = config.sample_rate;
-                        let resultat = Noyau::new(&banque, frequence).and_then(|noyau| ouvrir_flux(&appareil, config, noyau, rendu));
+                        let resultat = Noyau::new(&banque_audio, frequence).and_then(|noyau| ouvrir_flux(&appareil, config, noyau, rendu));
                         match resultat {
                             Ok(flux) => {
                                 let _ = pret.send(Ok((frequence, Some(nom))));
@@ -101,14 +118,24 @@ impl Moteur {
                     }
                     Err(raison) => {
                         eprintln!("pas de sortie audio ({raison}) : horloge silencieuse");
-                        horloge_silencieuse(&banque, rendu, pret, attente);
+                        horloge_silencieuse(&banque_audio, rendu, pret, attente);
                     }
                 }
             })
             .map_err(|e| format!("fil audio : {e}"))?;
 
         let (frequence, sortie) = demarrage.recv().map_err(|_| "le fil audio s'est arrêté".to_string())??;
-        Ok(Moteur { commandes: envoi_commandes, poubelle, partage, frequence, sortie, _arret: arret })
+        Ok(Moteur {
+            commandes: envoi_commandes,
+            poubelle,
+            partage,
+            frequence,
+            banque,
+            capacite: (CAPACITE_DEPART, CAPACITE_DEPART),
+            installes: (0, 1),
+            sortie,
+            _arret: arret,
+        })
     }
 
     pub fn frequence(&self) -> u32 {
@@ -129,16 +156,63 @@ impl Moteur {
         while let Ok(ancienne) = self.poubelle.pop() {
             drop(ancienne);
         }
-        // file pleine : l'événement est perdu plutôt que de bloquer
-        let _ = self.commandes.push(commande);
+        // file pleine : on attend un peu que le fil audio la vide (jamais l'inverse) ; un
+        // événement de note est perdu plutôt que de bloquer longtemps
+        let mut commande = commande;
+        for _ in 0..200 {
+            match self.commandes.push(commande) {
+                Ok(()) => return,
+                Err(rtrb::PushError::Full(c)) => {
+                    commande = c;
+                    if matches!(commande, Commande::Evenement(_)) {
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
     }
 
     pub fn programmer(&mut self, evenement: Evenement) {
         self.envoyer(Commande::Evenement(evenement));
     }
 
-    pub fn configurer(&mut self, configuration: Configuration) {
+    /// Applique une configuration, quelle que soit sa taille : le graphe grandit d'abord (listes
+    /// plus grandes, puis canaux et pistes construits ici, hors du fil audio), puis les réglages
+    /// suivent. Les commandes arrivent dans l'ordre : le fil audio a tout avant les réglages.
+    pub fn configurer(&mut self, configuration: Configuration) -> Result<(), String> {
+        let (canaux, pistes) = (configuration.canaux.len(), configuration.pistes.len().max(1));
+        if canaux > self.capacite.0 || pistes > self.capacite.1 {
+            let nouvelle = (canaux.next_power_of_two().max(self.capacite.0), pistes.next_power_of_two().max(self.capacite.1));
+            self.envoyer(Commande::Stockage(Box::new(Stockage::avec_capacite(nouvelle.0, nouvelle.1))));
+            self.capacite = nouvelle;
+        }
+        for numero in self.installes.0..canaux {
+            let canal = Canal::new(&self.banque, self.frequence)?;
+            self.envoyer(Commande::InstallerCanal(numero as u32, canal));
+            self.installes.0 = numero + 1;
+        }
+        for numero in self.installes.1..pistes {
+            self.envoyer(Commande::InstallerPiste(numero as u32, Piste::new()));
+            self.installes.1 = numero + 1;
+        }
+        {
+            // les mesures suivent la taille du graphe (le fil audio ne fait que les remplir)
+            let mut mesures = self.partage.mesures.lock().unwrap_or_else(|e| e.into_inner());
+            if mesures.voix.len() < self.installes.0 {
+                mesures.voix.resize(self.installes.0, 0);
+            }
+            if mesures.cretes.len() < self.installes.1 {
+                mesures.cretes.resize(self.installes.1, [0.0; 2]);
+            }
+        }
         self.envoyer(Commande::Configurer(Box::new(configuration)));
+        Ok(())
+    }
+
+    /// Canaux et pistes construits dans le graphe.
+    pub fn taille_du_graphe(&self) -> (usize, usize) {
+        self.installes
     }
 
     pub fn tout_couper(&mut self) {
@@ -236,6 +310,22 @@ impl Rendu {
                     noyau.configurer(&configuration);
                     // libérée par l'autre fil : pas de désallocation ici
                     let _ = self.poubelle.push(Dechet::Configuration(configuration));
+                }
+                Commande::Stockage(mut boite) => {
+                    // les nouvelles listes entrent, les anciennes (vides) repartent dans la même boîte
+                    let nouveau = std::mem::replace(&mut *boite, Stockage::avec_capacite(0, 0));
+                    *boite = noyau.echanger_stockage(nouveau);
+                    let _ = self.poubelle.push(Dechet::Stockage(boite));
+                }
+                Commande::InstallerCanal(numero, canal) => {
+                    if let Some(ancien) = noyau.installer_canal(numero, canal) {
+                        let _ = self.poubelle.push(Dechet::Canal(ancien));
+                    }
+                }
+                Commande::InstallerPiste(numero, piste) => {
+                    if let Some(ancienne) = noyau.installer_piste(numero, piste) {
+                        let _ = self.poubelle.push(Dechet::Piste(ancienne));
+                    }
                 }
                 Commande::Session(mut session) => {
                     // la nouvelle session entre, l'ancienne repart dans la même boîte

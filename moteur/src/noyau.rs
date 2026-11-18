@@ -1,26 +1,33 @@
-//! Cœur du moteur : synthétiseurs, événements datés et mixer. Indépendant de la carte son,
-//! il sert aussi bien au rendu en direct (appelé par le fil audio) qu'au rendu hors ligne
-//! (export WAV, tests).
+//! Graphe audio du moteur, sans limite de taille : des canaux (chacun joue une *source* : lecteur
+//! SoundFont, synthé intégré, demain greffons) qui alimentent des pistes de mixage, puis le
+//! maître. Indépendant de la carte son : il sert au rendu en direct (appelé par le fil audio)
+//! comme au rendu hors ligne (export, tests).
 //!
-//! Graphe audio : chaque canal joue une *source* (lecteur SoundFont, synthétiseur intégré, et
-//! demain greffons), a sa sortie séparée, qui alimente la piste de mixage où il est routé.
+//! Règles du temps réel : dans `rendre`, `programmer`, `configurer`, `installer_*` et
+//! `echanger_stockage`, aucune allocation ni attente. Les canaux et les pistes sont construits
+//! ailleurs (`Canal::new`, `Piste::new`) et installés tout prêts ; quand les listes doivent
+//! grandir, des listes plus grandes, préparées ailleurs, sont échangées.
+//!
+//! Coût : un canal sans note et dont le son s'est éteint s'endort et ne coûte plus rien ; les
+//! canaux éveillés sont rendus en parallèle sur tous les cœurs.
 
 use std::sync::Arc;
 
 use rustysynth::SoundFont;
 
-use crate::effets::{gain_du_fader, panoramique, Biquad, Limiteur, Reverb, TypeFiltre};
-use crate::source::{sources_integrees, Source, TypeSource, TYPES_SOURCES};
+use crate::ateliers::Ateliers;
+use crate::effets::{Biquad, Limiteur, Reverb, TypeFiltre, gain_du_fader, panoramique};
+use crate::source::{Source, TYPES_SOURCES, TypeSource, sources_integrees};
 
-/// Canaux disponibles (comme la version web).
-pub const CANAUX: usize = 32;
-/// Pistes de mixage, maître compris (index 0).
-pub const PISTES: usize = 33;
 /// Plus long bloc rendu d'un coup ; au-delà, le rendu est découpé.
 pub const BLOC_MAX: usize = 1024;
 /// Événements en attente au plus (au-delà, les plus lointains sont ignorés).
-const FILE_MAX: usize = 16384;
-
+const FILE_MAX: usize = 65536;
+/// En dessous de ce nombre de canaux éveillés, le rendu reste sur le fil audio.
+const SEUIL_PARALLELE: usize = 4;
+/// Blocs silencieux d'affilée avant qu'un canal sans note ne s'endorme.
+const BLOCS_AVANT_SOMMEIL: u32 = 4;
+const SILENCE: f32 = 1e-6;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Message {
@@ -32,7 +39,8 @@ pub enum Message {
 pub struct Evenement {
     /// Instant, en échantillons depuis le démarrage du moteur.
     pub echantillon: u64,
-    pub canal: u8,
+    /// Numéro du canal dans le graphe (sans limite).
+    pub canal: u32,
     pub message: Message,
 }
 
@@ -41,12 +49,12 @@ pub struct ReglageCanal {
     pub actif: bool,
     pub programme: u8,
     pub batterie: bool,
-    /// Volume du canal (0 à 1, contrôleur 7).
+    /// Volume du canal (0 à 1).
     pub volume: f32,
-    /// Panoramique du canal (-1 à 1, contrôleur 10).
+    /// Panoramique du canal (-1 à 1).
     pub pan: f32,
-    /// Piste de mixage qui reçoit ce canal.
-    pub piste: u8,
+    /// Piste de mixage qui reçoit ce canal (0 = maître).
+    pub piste: u32,
     /// Ce qui produit le son du canal.
     pub source: TypeSource,
 }
@@ -77,78 +85,148 @@ impl Default for ReglagePiste {
     }
 }
 
-/// Tout le réglage du mixer et des canaux, envoyé d'un bloc au fil audio.
+/// Réglages de tous les canaux et de toutes les pistes ; l'indice est leur numéro.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Configuration {
-    pub canaux: [ReglageCanal; CANAUX],
-    pub pistes: [ReglagePiste; PISTES],
+    pub canaux: Vec<ReglageCanal>,
+    pub pistes: Vec<ReglagePiste>,
 }
 
 impl Default for Configuration {
+    /// Aucun canal, le maître seul.
     fn default() -> Self {
-        let mut pistes = [ReglagePiste::default(); PISTES];
-        pistes[0].existe = true;
-        Configuration { canaux: [ReglageCanal::default(); CANAUX], pistes }
+        Configuration { canaux: Vec::new(), pistes: vec![ReglagePiste { existe: true, ..Default::default() }] }
     }
 }
 
-/// Mesures pour l'interface : crête de chaque piste et nombre de voix de chaque canal.
+impl Configuration {
+    /// `canaux` canaux inactifs et `pistes` pistes (le maître existe toujours).
+    pub fn avec(canaux: usize, pistes: usize) -> Self {
+        let mut c = Configuration { canaux: vec![ReglageCanal::default(); canaux], pistes: vec![ReglagePiste::default(); pistes.max(1)] };
+        c.pistes[0].existe = true;
+        c
+    }
+}
+
+/// Mesures pour l'interface : crête de chaque piste et voix de chaque canal.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Mesures {
     pub cretes: Vec<[f32; 2]>,
     pub voix: Vec<u32>,
 }
 
-struct Canal {
+pub struct Canal {
     /// Une source de chaque type intégré ; seule celle du réglage joue.
     sources: [Box<dyn Source>; TYPES_SOURCES],
     reglage: ReglageCanal,
     gauche: Vec<f32>,
     droite: Vec<f32>,
-    /// Le canal a produit du son dans le dernier bloc.
-    sonne: bool,
+    /// Crête du dernier bloc rendu.
+    crete: f32,
+    blocs_silencieux: u32,
+    endormi: bool,
 }
 
 impl Canal {
+    /// Construit un canal (hors du fil audio : voix, tampons, synthétiseurs).
+    pub fn new(banque: &Arc<SoundFont>, frequence: u32) -> Result<Box<Canal>, String> {
+        Ok(Box::new(Canal {
+            sources: sources_integrees(banque, frequence)?,
+            reglage: ReglageCanal::default(),
+            gauche: vec![0.0; BLOC_MAX],
+            droite: vec![0.0; BLOC_MAX],
+            crete: 0.0,
+            blocs_silencieux: 0,
+            endormi: true,
+        }))
+    }
+
     fn source(&mut self) -> &mut dyn Source {
         self.sources[self.reglage.source.index()].as_mut()
     }
 
     fn appliquer(&mut self, reglage: ReglageCanal) {
         if reglage.source != self.reglage.source {
-            // l'ancienne source se tait
             self.source().tout_couper();
         }
-        self.reglage = reglage;
-        self.source().regler(reglage.programme, reglage.batterie, reglage.volume, reglage.pan);
+        let premier = !self.reglage.actif && reglage.actif;
+        if reglage != self.reglage || premier {
+            self.reglage = reglage;
+            self.source().regler(reglage.programme, reglage.batterie, reglage.volume, reglage.pan);
+        }
+    }
+
+    fn reveiller(&mut self) {
+        self.endormi = false;
+        self.blocs_silencieux = 0;
     }
 
     fn voix(&self) -> u32 {
         let voix = self.sources[self.reglage.source.index()].voix();
-        if voix > 0 { voix } else { u32::from(self.sonne) }
+        if voix > 0 { voix } else { u32::from(!self.endormi && self.crete > 1e-4) }
+    }
+
+    /// Rend `n` échantillons de la source dans les tampons du canal.
+    fn rendre_source(&mut self, n: usize) {
+        let index = self.reglage.source.index();
+        let (g, d) = (&mut self.gauche[..n], &mut self.droite[..n]);
+        self.sources[index].rendre(g, d);
+        self.crete = g.iter().chain(d.iter()).fold(0.0f32, |m, v| m.max(v.abs()));
     }
 }
 
-struct Piste {
+pub struct Piste {
     reglage: ReglagePiste,
     filtres: [Biquad; 3],
     gauche: Vec<f32>,
     droite: Vec<f32>,
     crete: [f32; 2],
+    /// Reçoit au moins un canal éveillé dans ce bloc (sinon, rien à traiter).
+    utilisee: bool,
+}
+
+impl Piste {
+    pub fn new() -> Box<Piste> {
+        Box::new(Piste {
+            reglage: ReglagePiste::default(),
+            filtres: [Biquad::neutre(); 3],
+            gauche: vec![0.0; BLOC_MAX],
+            droite: vec![0.0; BLOC_MAX],
+            crete: [0.0; 2],
+            utilisee: false,
+        })
+    }
+}
+
+/// Les listes du graphe, préparées hors du fil audio pour l'agrandir.
+pub struct Stockage {
+    pub canaux: Vec<Option<Box<Canal>>>,
+    pub pistes: Vec<Option<Box<Piste>>>,
+    pub eveilles: Vec<u32>,
+}
+
+impl Stockage {
+    pub fn avec_capacite(canaux: usize, pistes: usize) -> Self {
+        Stockage { canaux: Vec::with_capacity(canaux), pistes: Vec::with_capacity(pistes), eveilles: Vec::with_capacity(canaux) }
+    }
 }
 
 pub struct Noyau {
     frequence: u32,
+    banque: Arc<SoundFont>,
     /// Échantillons déjà rendus : l'horloge du moteur.
     horloge: u64,
-    canaux: Vec<Canal>,
-    pistes: Vec<Piste>,
+    canaux: Vec<Option<Box<Canal>>>,
+    pistes: Vec<Option<Box<Piste>>>,
+    /// Canaux à rendre dans le bloc en cours (liste réutilisée, sans allocation).
+    eveilles: Vec<u32>,
     file: Vec<Evenement>,
     reverb: Reverb,
     limiteur: Limiteur,
     envoi: [Vec<f32>; 2],
     /// Clics du métronome à faire entendre : (début en échantillons, accent).
     clics: Vec<(u64, bool)>,
+    ateliers: Ateliers,
 }
 
 /// Clics en attente au plus (sans allocation dans le fil audio).
@@ -156,38 +234,43 @@ const CLICS_MAX: usize = 32;
 const CLIC_DUREE: f32 = 0.06;
 const CLIC_NIVEAU: f32 = 0.35;
 
+/// Contexte du rendu parallèle : la liste des canaux et celle des canaux éveillés, plus la
+/// longueur du bloc. Valide pendant tout l'appel à `Ateliers::executer`.
+struct ContexteRendu {
+    canaux: *mut Option<Box<Canal>>,
+    eveilles: *const u32,
+    n: usize,
+}
+
+/// Rend la source d'un canal éveillé. Chaque indice désigne un canal différent : aucun canal
+/// n'est touché par deux fils à la fois.
+unsafe fn rendre_un_canal(contexte: *const (), index: usize) {
+    unsafe {
+        let c = &*(contexte as *const ContexteRendu);
+        let numero = *c.eveilles.add(index) as usize;
+        if let Some(canal) = (*c.canaux.add(numero)).as_mut() {
+            canal.rendre_source(c.n);
+        }
+    }
+}
+
 impl Noyau {
     pub fn new(banque: &Arc<SoundFont>, frequence: u32) -> Result<Self, String> {
-        let mut canaux = Vec::with_capacity(CANAUX);
-        for _ in 0..CANAUX {
-            canaux.push(Canal {
-                sources: sources_integrees(banque, frequence)?,
-                reglage: ReglageCanal::default(),
-                gauche: vec![0.0; BLOC_MAX],
-                droite: vec![0.0; BLOC_MAX],
-                sonne: false,
-            });
-        }
-        let pistes = (0..PISTES)
-            .map(|_| Piste {
-                reglage: ReglagePiste::default(),
-                filtres: [Biquad::neutre(); 3],
-                gauche: vec![0.0; BLOC_MAX],
-                droite: vec![0.0; BLOC_MAX],
-                crete: [0.0; 2],
-            })
-            .collect();
         let mut noyau = Noyau {
             frequence,
+            banque: banque.clone(),
             horloge: 0,
-            canaux,
-            pistes,
+            canaux: Vec::with_capacity(64),
+            pistes: Vec::with_capacity(64),
+            eveilles: Vec::with_capacity(64),
             file: Vec::with_capacity(FILE_MAX),
             reverb: Reverb::new(frequence as f32),
             limiteur: Limiteur::new(frequence as f32),
             envoi: [vec![0.0; BLOC_MAX], vec![0.0; BLOC_MAX]],
             clics: Vec::with_capacity(CLICS_MAX),
+            ateliers: Ateliers::new(31),
         };
+        noyau.installer_piste(0, Piste::new());
         noyau.configurer(&Configuration::default());
         Ok(noyau)
     }
@@ -200,31 +283,114 @@ impl Noyau {
         self.horloge
     }
 
+    pub fn fils_de_calcul(&self) -> usize {
+        self.ateliers.nombre_de_fils()
+    }
+
     /// Convertit un instant en secondes (horloge du moteur) en échantillons.
     pub fn echantillon(&self, secondes: f64) -> u64 {
         (secondes.max(0.0) * self.frequence as f64).round() as u64
     }
 
+    pub fn capacite(&self) -> (usize, usize) {
+        (self.canaux.capacity(), self.pistes.capacity())
+    }
+
+    pub fn canaux_installes(&self) -> usize {
+        self.canaux.len()
+    }
+
+    pub fn pistes_installees(&self) -> usize {
+        self.pistes.len()
+    }
+
+    // ---------------------------------------------------------------- structure du graphe
+
+    /// Remplace les listes par d'autres, plus grandes, préparées ailleurs ; les canaux et pistes
+    /// y sont déplacés (pas de copie, pas d'allocation). Renvoie les anciennes listes (vides) à
+    /// libérer hors du fil audio.
+    pub fn echanger_stockage(&mut self, mut nouveau: Stockage) -> Stockage {
+        nouveau.canaux.extend(self.canaux.drain(..).take(nouveau.canaux.capacity()));
+        nouveau.pistes.extend(self.pistes.drain(..).take(nouveau.pistes.capacity()));
+        Stockage {
+            canaux: std::mem::replace(&mut self.canaux, nouveau.canaux),
+            pistes: std::mem::replace(&mut self.pistes, nouveau.pistes),
+            eveilles: std::mem::replace(&mut self.eveilles, nouveau.eveilles),
+        }
+    }
+
+    /// Installe un canal à son numéro (dans la capacité déjà réservée). Renvoie l'ancien canal,
+    /// ou le nouveau s'il n'y a pas la place (rien n'est perdu ni alloué).
+    pub fn installer_canal(&mut self, numero: u32, canal: Box<Canal>) -> Option<Box<Canal>> {
+        let numero = numero as usize;
+        if numero >= self.canaux.capacity() {
+            return Some(canal);
+        }
+        if numero >= self.canaux.len() {
+            self.canaux.resize_with(numero + 1, || None);
+        }
+        self.canaux[numero].replace(canal)
+    }
+
+    pub fn installer_piste(&mut self, numero: u32, piste: Box<Piste>) -> Option<Box<Piste>> {
+        let numero = numero as usize;
+        if numero >= self.pistes.capacity() {
+            return Some(piste);
+        }
+        if numero >= self.pistes.len() {
+            self.pistes.resize_with(numero + 1, || None);
+        }
+        self.pistes[numero].replace(piste)
+    }
+
+    /// Hors du fil audio (rendu hors ligne, tests) : construit tout ce qu'il faut pour cette
+    /// configuration (avec allocation).
+    pub fn preparer(&mut self, configuration: &Configuration) -> Result<(), String> {
+        let (canaux, pistes) = (configuration.canaux.len(), configuration.pistes.len());
+        if canaux > self.canaux.capacity() || pistes > self.pistes.capacity() {
+            let stockage = Stockage::avec_capacite(canaux.max(self.canaux.capacity()) * 2, pistes.max(self.pistes.capacity()) * 2);
+            self.echanger_stockage(stockage);
+        }
+        for i in self.canaux.len()..canaux {
+            self.installer_canal(i as u32, Canal::new(&self.banque, self.frequence)?);
+        }
+        for i in self.pistes.len()..pistes {
+            self.installer_piste(i as u32, Piste::new());
+        }
+        Ok(())
+    }
+
     pub fn configurer(&mut self, configuration: &Configuration) {
-        for (canal, reglage) in self.canaux.iter_mut().zip(configuration.canaux.iter()) {
-            if *reglage != canal.reglage || !canal.reglage.actif {
-                canal.appliquer(*reglage);
+        for (i, canal) in self.canaux.iter_mut().enumerate() {
+            let Some(canal) = canal else { continue };
+            let reglage = configuration.canaux.get(i).copied().unwrap_or_default();
+            if !reglage.actif && canal.reglage.actif {
+                canal.source().tout_couper();
+                canal.endormi = true;
             }
+            canal.appliquer(reglage);
         }
         let fe = self.frequence as f32;
-        for (piste, reglage) in self.pistes.iter_mut().zip(configuration.pistes.iter()) {
+        for (i, piste) in self.pistes.iter_mut().enumerate() {
+            let Some(piste) = piste else { continue };
+            let mut reglage = configuration.pistes.get(i).copied().unwrap_or_default();
+            if i == 0 {
+                reglage.existe = true;
+            }
             if piste.reglage.eq != reglage.eq || !piste.reglage.existe {
                 piste.filtres[0].regler(TypeFiltre::PlateauGrave, 200.0, reglage.eq[0], fe);
                 piste.filtres[1].regler(TypeFiltre::Cloche(0.8), 1200.0, reglage.eq[1], fe);
                 piste.filtres[2].regler(TypeFiltre::PlateauAigu, 5000.0, reglage.eq[2], fe);
             }
-            piste.reglage = *reglage;
+            piste.reglage = reglage;
         }
     }
 
+    // ---------------------------------------------------------------- événements
+
     /// Ajoute un événement à la file (gardée triée ; à instant égal, l'ordre d'arrivée).
     pub fn programmer(&mut self, evenement: Evenement) {
-        if self.file.len() >= FILE_MAX || evenement.canal as usize >= CANAUX {
+        if self.file.len() >= FILE_MAX {
             return;
         }
         let position = self.file.partition_point(|e| e.echantillon <= evenement.echantillon);
@@ -247,7 +413,7 @@ impl Noyau {
     pub fn tout_couper(&mut self) {
         self.file.clear();
         self.clics.clear();
-        for canal in self.canaux.iter_mut() {
+        for canal in self.canaux.iter_mut().flatten() {
             for source in canal.sources.iter_mut() {
                 source.tout_couper();
             }
@@ -255,12 +421,20 @@ impl Noyau {
     }
 
     fn executer(&mut self, evenement: Evenement) {
-        let source = self.canaux[evenement.canal as usize].source();
+        let Some(Some(canal)) = self.canaux.get_mut(evenement.canal as usize) else { return };
+        if !canal.reglage.actif {
+            return;
+        }
         match evenement.message {
-            Message::NoteOn { hauteur, velocite } => source.note_on(hauteur, velocite),
-            Message::NoteOff { hauteur } => source.note_off(hauteur),
+            Message::NoteOn { hauteur, velocite } => {
+                canal.reveiller();
+                canal.source().note_on(hauteur, velocite);
+            }
+            Message::NoteOff { hauteur } => canal.source().note_off(hauteur),
         }
     }
+
+    // ---------------------------------------------------------------- rendu
 
     /// Rend la suite du son dans `gauche` et `droite` (même longueur), en jouant les événements
     /// à leur instant.
@@ -287,34 +461,71 @@ impl Noyau {
 
     fn rendre_bloc(&mut self, gauche: &mut [f32], droite: &mut [f32]) {
         let n = gauche.len();
-        for piste in self.pistes.iter_mut() {
-            piste.gauche[..n].fill(0.0);
-            piste.droite[..n].fill(0.0);
-        }
-        // 1. chaque canal actif dans sa piste
-        for canal in self.canaux.iter_mut() {
-            if !canal.reglage.actif {
-                continue;
+        // 1. les canaux éveillés : leur source rend, en parallèle s'ils sont nombreux
+        self.eveilles.clear();
+        for (i, canal) in self.canaux.iter().enumerate() {
+            if let Some(c) = canal {
+                if c.reglage.actif && !c.endormi && self.eveilles.len() < self.eveilles.capacity() {
+                    self.eveilles.push(i as u32);
+                }
             }
-            let index_source = canal.reglage.source.index();
-            canal.sources[index_source].rendre(&mut canal.gauche[..n], &mut canal.droite[..n]);
-            let mut crete = 0f32;
-            let index = canal.reglage.piste as usize;
-            let piste = &mut self.pistes[if index < PISTES && index > 0 { index } else { 0 }];
-            for i in 0..n {
-                crete = crete.max(canal.gauche[i].abs()).max(canal.droite[i].abs());
-                piste.gauche[i] += canal.gauche[i];
-                piste.droite[i] += canal.droite[i];
-            }
-            canal.sonne = crete > 1e-4;
         }
-        // 2. les pistes (hors maître) : égaliseur, fader, panoramique, muet, envoi réverbération
+        if self.eveilles.len() >= SEUIL_PARALLELE && self.ateliers.nombre_de_fils() > 0 {
+            let contexte = ContexteRendu { canaux: self.canaux.as_mut_ptr(), eveilles: self.eveilles.as_ptr(), n };
+            // SÛRETÉ : chaque indice désigne un canal distinct ; les listes ne bougent pas
+            // pendant l'appel, qui ne rend la main qu'une fois tout fini.
+            unsafe { self.ateliers.executer(&contexte as *const ContexteRendu as *const (), rendre_un_canal, self.eveilles.len()) };
+        } else {
+            for &i in &self.eveilles {
+                if let Some(c) = self.canaux[i as usize].as_mut() {
+                    c.rendre_source(n);
+                }
+            }
+        }
+
+        // 2. chaque canal dans sa piste ; les canaux silencieux sans note s'endorment
+        for piste in self.pistes.iter_mut().flatten() {
+            piste.utilisee = false;
+        }
+        for &i in &self.eveilles {
+            let Some(canal) = self.canaux[i as usize].as_mut() else { continue };
+            let voulue = canal.reglage.piste as usize;
+            let index = match self.pistes.get(voulue) {
+                Some(Some(p)) if p.reglage.existe => voulue,
+                _ => 0,
+            };
+            let Some(piste) = self.pistes[index].as_mut() else { continue };
+            if !piste.utilisee {
+                piste.gauche[..n].fill(0.0);
+                piste.droite[..n].fill(0.0);
+                piste.utilisee = true;
+            }
+            for k in 0..n {
+                piste.gauche[k] += canal.gauche[k];
+                piste.droite[k] += canal.droite[k];
+            }
+            let sans_note = canal.sources[canal.reglage.source.index()].voix() == 0;
+            if sans_note && canal.crete < SILENCE {
+                canal.blocs_silencieux += 1;
+                if canal.blocs_silencieux >= BLOCS_AVANT_SOMMEIL {
+                    canal.endormi = true;
+                }
+            } else {
+                canal.blocs_silencieux = 0;
+            }
+        }
+
+        // 3. les pistes : égaliseur, fader, panoramique, muet, envoi réverbération
         self.envoi[0][..n].fill(0.0);
         self.envoi[1][..n].fill(0.0);
         let (maitre, autres) = self.pistes.split_at_mut(1);
-        let maitre = &mut maitre[0];
-        for piste in autres.iter_mut() {
-            if !piste.reglage.existe {
+        let maitre = maitre[0].as_mut().expect("le maître existe toujours");
+        if !maitre.utilisee {
+            maitre.gauche[..n].fill(0.0);
+            maitre.droite[..n].fill(0.0);
+        }
+        for piste in autres.iter_mut().flatten() {
+            if !piste.reglage.existe || !piste.utilisee {
                 continue;
             }
             let gain = if piste.reglage.audible { gain_du_fader(piste.reglage.volume) } else { 0.0 };
@@ -334,7 +545,8 @@ impl Noyau {
             }
             piste.crete = [piste.crete[0].max(crete[0]), piste.crete[1].max(crete[1])];
         }
-        // 3. le maître : réverbération, fader, limiteur
+
+        // 4. le maître : réverbération, fader, limiteur
         let gain = gain_du_fader(maitre.reglage.volume);
         let mut crete = [0f32; 2];
         for i in 0..n {
@@ -344,7 +556,9 @@ impl Noyau {
             droite[i] = d;
             crete = [crete[0].max(g.abs()), crete[1].max(d.abs())];
         }
-        // 4. le métronome, par-dessus (il ne passe pas par le limiteur)
+        maitre.utilisee = false;
+
+        // 5. le métronome, par-dessus (il ne passe pas par le limiteur)
         if !self.clics.is_empty() {
             let fe = self.frequence as f32;
             let duree = (CLIC_DUREE * fe) as u64;
@@ -370,34 +584,34 @@ impl Noyau {
         self.horloge += n as u64;
     }
 
+    // ---------------------------------------------------------------- mesures
+
     /// Ajoute les crêtes du moment à celles déjà accumulées dans `mesures` (le maximum est
-    /// gardé jusqu'à ce que l'interface les lise) et met à jour les voix. Sans allocation une
-    /// fois `mesures` à la bonne taille.
+    /// gardé jusqu'à ce que l'interface les lise) et met à jour les voix. Sans allocation :
+    /// `mesures` est dimensionné par l'interface ; ce qui dépasse est ignoré.
     pub fn cumuler_mesures(&mut self, mesures: &mut Mesures) {
-        if mesures.cretes.len() != PISTES || mesures.voix.len() != CANAUX {
-            mesures.cretes.resize(PISTES, [0.0; 2]);
-            mesures.voix.resize(CANAUX, 0);
-        }
         for (piste, cumul) in self.pistes.iter_mut().zip(mesures.cretes.iter_mut()) {
-            *cumul = [cumul[0].max(piste.crete[0]), cumul[1].max(piste.crete[1])];
-            piste.crete = [0.0; 2];
+            if let Some(p) = piste {
+                *cumul = [cumul[0].max(p.crete[0]), cumul[1].max(p.crete[1])];
+                p.crete = [0.0; 2];
+            }
         }
         for (canal, voix) in self.canaux.iter().zip(mesures.voix.iter_mut()) {
-            *voix = canal.voix();
+            *voix = canal.as_ref().map(|c| c.voix()).unwrap_or(0);
         }
     }
 
-    /// Crêtes depuis la dernière lecture (puis remises à zéro) et voix de chaque canal.
+    /// Crêtes depuis la dernière lecture (puis remises à zéro) et voix de chaque canal (avec
+    /// allocation : hors du fil audio).
     pub fn mesurer(&mut self, mesures: &mut Mesures) {
-        mesures.cretes.clear();
-        for piste in self.pistes.iter_mut() {
-            mesures.cretes.push(piste.crete);
-            piste.crete = [0.0; 2];
-        }
-        mesures.voix.clear();
-        for canal in self.canaux.iter() {
-            mesures.voix.push(canal.voix());
-        }
+        mesures.cretes = vec![[0.0; 2]; self.pistes.len()];
+        mesures.voix = vec![0; self.canaux.len()];
+        self.cumuler_mesures(mesures);
+    }
+
+    /// Canaux éveillés (pour les tests et les indicateurs de charge).
+    pub fn canaux_eveilles(&self) -> usize {
+        self.canaux.iter().flatten().filter(|c| c.reglage.actif && !c.endormi).count()
     }
 }
 
@@ -421,10 +635,16 @@ pub mod tests {
 
     /// Un canal (piano par défaut) routé sur la piste 1.
     pub fn configuration(programme: u8, batterie: bool) -> Configuration {
-        let mut c = Configuration::default();
+        let mut c = Configuration::avec(1, 2);
         c.canaux[0] = ReglageCanal { actif: true, programme, batterie, volume: 0.8, pan: 0.0, piste: 1, source: TypeSource::SoundFont };
         c.pistes[1] = ReglagePiste { existe: true, ..Default::default() };
         c
+    }
+
+    /// Prépare (hors temps réel) puis applique une configuration.
+    pub fn regler(noyau: &mut Noyau, c: &Configuration) {
+        noyau.preparer(c).unwrap();
+        noyau.configurer(c);
     }
 
     pub fn rendre(noyau: &mut Noyau, secondes: f32) -> (Vec<f32>, Vec<f32>) {
@@ -444,10 +664,14 @@ pub mod tests {
     }
 
     pub fn note(noyau: &mut Noyau, secondes: f64, hauteur: u8, duree: f64) {
+        note_sur(noyau, 0, secondes, hauteur, duree);
+    }
+
+    pub fn note_sur(noyau: &mut Noyau, canal: u32, secondes: f64, hauteur: u8, duree: f64) {
         let debut = noyau.echantillon(secondes);
         let fin = noyau.echantillon(secondes + duree);
-        noyau.programmer(Evenement { echantillon: debut, canal: 0, message: Message::NoteOn { hauteur, velocite: 100 } });
-        noyau.programmer(Evenement { echantillon: fin, canal: 0, message: Message::NoteOff { hauteur } });
+        noyau.programmer(Evenement { echantillon: debut, canal, message: Message::NoteOn { hauteur, velocite: 100 } });
+        noyau.programmer(Evenement { echantillon: fin, canal, message: Message::NoteOff { hauteur } });
     }
 
     fn efficace(x: &[f32]) -> f32 {
@@ -470,7 +694,7 @@ pub mod tests {
     #[test]
     fn une_note_juste_a_son_instant() {
         let mut noyau = Noyau::new(&banque(), FE).unwrap();
-        noyau.configurer(&configuration(0, false));
+        regler(&mut noyau, &configuration(0, false));
         note(&mut noyau, 0.25, 69, 1.0);
         let (g, _) = rendre(&mut noyau, 1.5);
         let quart = (0.25 * FE as f32) as usize;
@@ -483,10 +707,10 @@ pub mod tests {
     #[test]
     fn batterie_sur_un_canal_quelconque() {
         let mut noyau = Noyau::new(&banque(), FE).unwrap();
-        let mut c = configuration(0, true);
-        c.canaux[5] = c.canaux[0];
-        c.canaux[0].actif = false;
-        noyau.configurer(&c);
+        let mut c = Configuration::avec(6, 2);
+        c.canaux[5] = configuration(0, true).canaux[0];
+        c.pistes[1].existe = true;
+        regler(&mut noyau, &c);
         noyau.programmer(Evenement { echantillon: 0, canal: 5, message: Message::NoteOn { hauteur: 38, velocite: 110 } });
         let (g, _) = rendre(&mut noyau, 0.3);
         assert!(efficace(&g) > 0.01, "la caisse claire sonne");
@@ -495,7 +719,7 @@ pub mod tests {
     #[test]
     fn tout_couper_annule_le_programme() {
         let mut noyau = Noyau::new(&banque(), FE).unwrap();
-        noyau.configurer(&configuration(48, false));
+        regler(&mut noyau, &configuration(48, false));
         note(&mut noyau, 0.0, 60, 2.0);
         note(&mut noyau, 0.5, 64, 1.0);
         rendre(&mut noyau, 0.2);
@@ -510,7 +734,7 @@ pub mod tests {
             let mut noyau = Noyau::new(&banque(), FE).unwrap();
             let mut c = configuration(0, false);
             c.pistes[1] = ReglagePiste { existe: true, ..reglage };
-            noyau.configurer(&c);
+            regler(&mut noyau, &c);
             note(&mut noyau, 0.0, 60, 1.0);
             let (g, d) = rendre(&mut noyau, 0.5);
             (efficace(&g), efficace(&d))
@@ -526,7 +750,9 @@ pub mod tests {
     #[test]
     fn mesures_cretes_et_voix() {
         let mut noyau = Noyau::new(&banque(), FE).unwrap();
-        noyau.configurer(&configuration(0, false));
+        let mut c = configuration(0, false);
+        c.canaux.push(ReglageCanal::default());
+        regler(&mut noyau, &c);
         note(&mut noyau, 0.0, 60, 1.0);
         rendre(&mut noyau, 0.3);
         let mut m = Mesures::default();
@@ -536,5 +762,51 @@ pub mod tests {
         assert!(m.cretes[1][0] > 0.01 && m.cretes[0][0] > 0.01);
         noyau.mesurer(&mut m);
         assert_eq!(m.cretes[1], [0.0, 0.0], "remises à zéro après lecture");
+    }
+
+    #[test]
+    fn le_graphe_grandit_sans_limite_et_les_canaux_s_endorment() {
+        let mut noyau = Noyau::new(&banque(), FE).unwrap();
+        // 300 canaux, 300 pistes : bien au-delà des anciens 32 canaux
+        let mut c = Configuration::avec(300, 301);
+        for i in 0..300 {
+            c.canaux[i] = ReglageCanal { actif: true, programme: (i % 100) as u8, piste: (i + 1) as u32, ..Default::default() };
+            c.pistes[i + 1].existe = true;
+        }
+        regler(&mut noyau, &c);
+        assert_eq!(noyau.canaux_installes(), 300);
+        // au repos, tout dort : rien ne coûte
+        rendre(&mut noyau, 0.1);
+        assert_eq!(noyau.canaux_eveilles(), 0);
+        // une note sur le 250e canal le réveille et sonne sur sa piste
+        note_sur(&mut noyau, 249, 0.0, 60, 0.3);
+        rendre(&mut noyau, 0.2);
+        assert_eq!(noyau.canaux_eveilles(), 1);
+        let mut m = Mesures::default();
+        noyau.mesurer(&mut m);
+        assert!(m.cretes[250][0] > 0.01, "piste 250 : {:?}", m.cretes[250]);
+        assert_eq!(m.voix[249], 1);
+        // une fois la note éteinte, il se rendort
+        rendre(&mut noyau, 3.0);
+        assert_eq!(noyau.canaux_eveilles(), 0);
+    }
+
+    #[test]
+    fn rendu_parallele_identique_au_rendu_sequentiel() {
+        let rendu = |fils: usize| {
+            let mut noyau = Noyau::new(&banque(), FE).unwrap();
+            noyau.ateliers = Ateliers::avec_fils(fils);
+            let mut c = Configuration::avec(40, 41);
+            for i in 0..40 {
+                c.canaux[i] = ReglageCanal { actif: true, programme: (i * 3 % 100) as u8, piste: (i + 1) as u32, volume: 0.5, ..Default::default() };
+                c.pistes[i + 1].existe = true;
+            }
+            regler(&mut noyau, &c);
+            for i in 0..40u32 {
+                note_sur(&mut noyau, i, 0.01 * i as f64, 48 + (i % 24) as u8, 0.4);
+            }
+            rendre(&mut noyau, 0.8).0
+        };
+        assert_eq!(rendu(0), rendu(3), "le partage du travail ne change pas le son");
     }
 }

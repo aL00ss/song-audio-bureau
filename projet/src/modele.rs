@@ -11,7 +11,6 @@ use crate::gm::{CANAL_BATTERIE, nom_instrument};
 use crate::temps::{SIGNATURE_DEFAUT, Signature, tics_par_mesure};
 
 pub const VERSION_PROJET: u32 = 1;
-pub const NB_CANAUX_MIDI_MAX: usize = 64;
 pub const NOTE_DEFAUT_MELODIQUE: u8 = 60;
 pub const NOTE_DEFAUT_BATTERIE: u8 = 36;
 pub const REVERB_DEFAUT: f32 = 0.18;
@@ -259,27 +258,25 @@ pub fn pistes_audibles(pistes: &[PisteMixage]) -> HashSet<usize> {
     pistes.iter().filter(|p| p.index != 0 && if solo { p.solo } else { !p.muet }).map(|p| p.index).collect()
 }
 
-/// Canal MIDI de chaque canal du projet : la première batterie sur le canal 10 (indice 9), les
-/// autres canaux sur 0, 1, 2… en sautant le 9.
-pub fn attribuer_canaux_midi(canaux: &[Canal]) -> Result<HashMap<String, u8>, String> {
+/// Canal MIDI de chaque canal du projet, pour l'export MIDI : la première batterie sur le canal
+/// 10 (indice 9), les autres sur 0, 1, 2… en sautant le 9. Au-delà de 16, les numéros continuent
+/// (16 canaux par port MIDI) : aucun plafond. Le moteur, lui, adresse les canaux par leur rang.
+pub fn attribuer_canaux_midi(canaux: &[Canal]) -> HashMap<String, u32> {
     let mut attribution = HashMap::new();
     let premiere_batterie = canaux.iter().position(|c| c.batterie);
     let mut suivant = 0usize;
     for (i, canal) in canaux.iter().enumerate() {
         if Some(i) == premiere_batterie {
-            attribution.insert(canal.id.clone(), CANAL_BATTERIE);
+            attribution.insert(canal.id.clone(), CANAL_BATTERIE as u32);
             continue;
         }
-        if suivant == CANAL_BATTERIE as usize {
+        if suivant % 16 == CANAL_BATTERIE as usize {
             suivant += 1;
         }
-        if suivant >= NB_CANAUX_MIDI_MAX {
-            return Err(format!("Trop d'instruments : {} au maximum", NB_CANAUX_MIDI_MAX - 1));
-        }
-        attribution.insert(canal.id.clone(), suivant as u8);
+        attribution.insert(canal.id.clone(), suivant as u32);
         suivant += 1;
     }
-    Ok(attribution)
+    attribution
 }
 
 #[cfg(test)]
@@ -295,7 +292,7 @@ mod tests {
         assert_eq!(p.mixage.len(), 4);
         assert_eq!(p.canal(&piano).unwrap().nom, "Piano à queue");
         assert_eq!(p.canal(&batterie).unwrap().note_defaut, 36);
-        let midi = attribuer_canaux_midi(&p.canaux).unwrap();
+        let midi = attribuer_canaux_midi(&p.canaux);
         assert_eq!((midi[&piano], midi[&batterie], midi[&basse]), (0, 9, 1));
         p.canal_mut(&basse).unwrap().solo = true;
         assert_eq!(canaux_audibles(&p.canaux), HashSet::from([basse.as_str()]));
@@ -317,5 +314,18 @@ mod tests {
         // une batterie joue toujours la banque General MIDI
         let b = p.ajouter_canal(OptionsCanal { batterie: true, source: SourceCanal::Soustractif, ..Default::default() });
         assert_eq!(p.canal(&b).unwrap().source, SourceCanal::Soundfont);
+    }
+
+    #[test]
+    fn des_centaines_de_canaux_sans_plafond() {
+        let mut p = creer_projet("Grand orchestre");
+        for i in 0..300u32 {
+            p.ajouter_canal(OptionsCanal { programme: (i % 128) as u8, batterie: i % 50 == 0, ..Default::default() });
+        }
+        assert_eq!((p.canaux.len(), p.mixage.len()), (300, 301));
+        let midi = attribuer_canaux_midi(&p.canaux);
+        assert_eq!(midi.len(), 300);
+        // les numéros MIDI ne retombent jamais sur un canal 10 d'un autre port
+        assert!(midi.values().filter(|&&m| m != 9).all(|m| m % 16 != 9));
     }
 }

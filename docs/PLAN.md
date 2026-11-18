@@ -39,6 +39,27 @@ interface (React, TypeScript)                moteur (Rust)
 Organisation du code Rust : une crate `moteur` (bibliothèque, sans Tauri, entièrement testée)
 et l'application `src-tauri` qui l'expose à l'interface.
 
+## Exigence : pas de limite d'instruments (2026-11-18)
+
+Comme les grands studios, song-audio doit tenir **des centaines d'instruments et de pistes en
+même temps, sans plafond fixe**. Conséquences pour le moteur :
+
+- **Graphe dynamique** : canaux et pistes de mixage dans des listes qui grandissent à la
+  demande, adressés par un numéro (32 bits), au lieu de tableaux fixes (32 canaux, 33 pistes).
+  Les canaux MIDI (16 par port) ne servent plus qu'à l'export MIDI.
+- **Aucune allocation dans le fil audio** : les canaux sont construits (banque, voix, tampons)
+  hors du fil audio et lui sont remis tout prêts ; quand la liste doit grandir, une liste plus
+  grande, préparée à côté, lui est échangée.
+- **Rendu sur tous les cœurs** : les canaux actifs sont répartis entre des fils de calcul
+  (autant que de cœurs, moins un) qui se les partagent par un compteur atomique, sans verrou ni
+  allocation ; le mélange des pistes suit.
+- **Canaux endormis** : un canal sans note et dont le son s'est éteint ne coûte plus rien ; il
+  se réveille à la note suivante. Cent instruments chargés dont dix jouent coûtent comme dix.
+- **Interface** : listes virtualisées (seules les lignes visibles sont dessinées) dans le rack,
+  le mixer et l'arrangement.
+- **Vérifié par des tests** : des centaines de canaux chargés, plus de cent qui jouent à la
+  fois, plus vite que le temps réel.
+
 ## Reconstruction native (décision du 2026-11-18)
 
 L'interface du bureau passe en **Rust natif (egui)**, dans le même programme que le moteur (voir
@@ -83,6 +104,19 @@ passent par egui_kittest.
   bouton « Disposition par défaut ». Les panneaux encore vides disent à quelle phase ils
   arrivent. 5 tests unitaires (dont la disposition relue par le vrai stockage d'eframe),
   4 tests d'interface.
+- [x] **Pas de limite d'instruments** : graphe du moteur dynamique (canaux et pistes en
+  listes qui grandissent, numéros 32 bits ; canaux construits hors du fil audio et installés
+  tout prêts ; listes agrandies par échange, sans allocation dans le fil audio) ; rendu sur
+  tous les cœurs (16 fils ici) par un compteur atomique unique (bloc, nombre de tâches,
+  prochaine tâche) : aucun verrou, aucun fil en retard ne peut prendre la tâche d'un autre
+  bloc ; canaux endormis quand ils se taisent ; le canal du moteur est le rang du canal dans le
+  projet, les canaux MIDI ne servent plus qu'à l'export (sans plafond) ; rack virtualisé.
+  Mesures : 200 instruments chargés dont 120 jouent (480 voix, 200 pistes avec égaliseur) à
+  4,1 fois le temps réel ; 500 instruments au repos à 341 fois ; 16 instruments à 19 fois
+  (contre 8,1 sur un seul cœur) ; interface avec 250 instruments qui jouent : 0,6 ms par
+  image, graphe mis en place en 51 ms. Tests : rendu parallèle identique au rendu sur un seul
+  cœur, chaque tâche exécutée une fois sur 3 000 blocs, 300 canaux et 300 pistes, réveil et
+  sommeil des canaux.
 
 ## Phases
 

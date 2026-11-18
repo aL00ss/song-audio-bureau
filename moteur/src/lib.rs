@@ -1,6 +1,7 @@
 //! Moteur sonore de song-audio (version de bureau) : synthétiseurs, mixer, sortie audio et
 //! rendu hors ligne. Bibliothèque indépendante de l'interface, testée par `cargo test`.
 
+pub mod ateliers;
 pub mod effets;
 pub mod noyau;
 mod performance;
@@ -10,7 +11,7 @@ pub mod source;
 pub mod soustractif;
 pub mod transport;
 
-pub use noyau::{CANAUX, Configuration, Evenement, Mesures, Message, Noyau, PISTES, ReglageCanal, ReglagePiste};
+pub use noyau::{Canal, Configuration, Evenement, Mesures, Message, Noyau, Piste, ReglageCanal, ReglagePiste, Stockage};
 pub use rustysynth::SoundFont;
 pub use sortie::Moteur;
 pub use source::{Source, TypeSource};

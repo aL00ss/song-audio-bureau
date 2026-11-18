@@ -2,7 +2,7 @@
 //! l'arrangement, compilées par l'interface) et programme chaque note dans le bloc audio où
 //! elle tombe, à l'échantillon près. Plus aucune programmation à l'avance depuis l'interface.
 
-use crate::noyau::{CANAUX, Evenement, Message, Noyau};
+use crate::noyau::{Evenement, Message, Noyau};
 
 pub const TICS_PAR_NOIRE: f64 = 96.0;
 
@@ -11,7 +11,8 @@ pub const TICS_PAR_NOIRE: f64 = 96.0;
 pub struct NoteSession {
     pub debut: u32,
     pub fin: u32,
-    pub canal: u8,
+    /// Numéro du canal dans le graphe (sans limite).
+    pub canal: u32,
     pub hauteur: u8,
     pub velocite: u8,
 }
@@ -58,7 +59,7 @@ pub enum ActionTransport {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Bascule {
     tic: u32,
-    canal: u8,
+    canal: u32,
     hauteur: u8,
     /// 0 : extinction.
     velocite: u8,
@@ -69,13 +70,15 @@ struct Bascule {
 pub struct SessionPreparee {
     pub session: Session,
     bascules: Vec<Bascule>,
+    /// Notes allumées par canal, dimensionné pour cette session (rempli à l'échange).
+    allumees: Vec<[bool; 128]>,
 }
 
 impl SessionPreparee {
     pub fn new(session: Session) -> Self {
         let mut bascules = Vec::with_capacity(session.notes.len() * 2);
         for n in &session.notes {
-            if n.debut >= session.longueur || (n.canal as usize) >= CANAUX {
+            if n.debut >= session.longueur {
                 continue;
             }
             let fin = n.fin.min(session.longueur).max(n.debut + 1);
@@ -83,7 +86,8 @@ impl SessionPreparee {
             bascules.push(Bascule { tic: fin, canal: n.canal, hauteur: n.hauteur, velocite: 0 });
         }
         bascules.sort_by(|a, b| a.tic.cmp(&b.tic).then((a.velocite > 0).cmp(&(b.velocite > 0))));
-        SessionPreparee { session, bascules }
+        let canaux = session.notes.iter().map(|n| n.canal as usize + 1).max().unwrap_or(0);
+        SessionPreparee { session, bascules, allumees: vec![[false; 128]; canaux] }
     }
 }
 
@@ -113,7 +117,7 @@ impl Transport {
             position: 0.0,
             decompte: 0.0,
             metronome: false,
-            allumees: vec![[false; 128]; CANAUX],
+            allumees: Vec::new(),
         }
     }
 
@@ -149,35 +153,40 @@ impl Transport {
     /// Met `prepa` en place et y range l'ancienne session (à libérer hors du fil audio).
     /// Sans allocation : utilisable dans le fil audio.
     pub fn echanger_session(&mut self, prepa: &mut SessionPreparee, noyau: &mut Noyau) {
-        let session = &prepa.session;
         let position = self.position();
-        for canal in 0..CANAUX {
+        for canal in 0..self.allumees.len() {
             for hauteur in 0..128 {
                 if !self.allumees[canal][hauteur] {
                     continue;
                 }
-                let encore = session.notes.iter().any(|n| {
-                    n.canal as usize == canal && n.hauteur as usize == hauteur && (n.debut as f64) <= position && position < n.fin as f64
-                });
-                if !encore {
-                    self.relacher(noyau, canal as u8, hauteur as u8);
+                let encore = canal < prepa.allumees.len()
+                    && prepa.session.notes.iter().any(|n| {
+                        n.canal as usize == canal && n.hauteur as usize == hauteur && (n.debut as f64) <= position && position < n.fin as f64
+                    });
+                if encore {
+                    // la note reste allumée : son état passe dans le tableau de la nouvelle session
+                    prepa.allumees[canal][hauteur] = true;
+                } else {
+                    self.relacher(noyau, canal as u32, hauteur as u8);
                 }
             }
         }
         std::mem::swap(&mut self.prepa, prepa);
+        // le tableau des notes allumées suit la session (l'ancien repart avec l'ancienne)
+        std::mem::swap(&mut self.allumees, &mut self.prepa.allumees);
     }
 
-    fn relacher(&mut self, noyau: &mut Noyau, canal: u8, hauteur: u8) {
+    fn relacher(&mut self, noyau: &mut Noyau, canal: u32, hauteur: u8) {
         let instant = noyau.horloge();
         noyau.programmer(Evenement { echantillon: instant, canal, message: Message::NoteOff { hauteur } });
         self.allumees[canal as usize][hauteur as usize] = false;
     }
 
     fn relacher_tout(&mut self, noyau: &mut Noyau) {
-        for canal in 0..CANAUX {
+        for canal in 0..self.allumees.len() {
             for hauteur in 0..128 {
                 if self.allumees[canal][hauteur] {
-                    self.relacher(noyau, canal as u8, hauteur as u8);
+                    self.relacher(noyau, canal as u32, hauteur as u8);
                 }
             }
         }
@@ -260,7 +269,8 @@ impl Transport {
                     break;
                 }
                 let echantillon = depart + (fait + (x.tic as f64 - a) / pas).round() as u64;
-                let allumee = &mut self.allumees[x.canal as usize][x.hauteur as usize];
+                let Some(notes) = self.allumees.get_mut(x.canal as usize) else { continue };
+                let allumee = &mut notes[x.hauteur as usize];
                 if x.velocite > 0 {
                     noyau.programmer(Evenement { echantillon, canal: x.canal, message: Message::NoteOn { hauteur: x.hauteur, velocite: x.velocite } });
                     *allumee = true;
@@ -297,7 +307,7 @@ impl Transport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::noyau::tests::{FE, banque, configuration};
+    use crate::noyau::tests::{FE, banque, configuration, regler};
 
     fn efficace(x: &[f32]) -> f32 {
         (x.iter().map(|v| v * v).sum::<f32>() / x.len().max(1) as f32).sqrt()
@@ -333,7 +343,7 @@ mod tests {
     #[test]
     fn les_notes_tombent_a_l_echantillon_pres_et_la_boucle_reprend() {
         let mut noyau = Noyau::new(&banque(), FE).unwrap();
-        noyau.configurer(&configuration(0, false)); // piano
+        regler(&mut noyau, &configuration(0, false)); // piano
         let mut t = Transport::new();
         t.definir_session(session(vec![NoteSession { debut: 192, fin: 240, canal: 0, hauteur: 72, velocite: 110 }]), &mut noyau);
         t.agir(ActionTransport::Jouer { decompte: false }, &mut noyau);
@@ -353,7 +363,7 @@ mod tests {
     #[test]
     fn pause_arret_et_recherche() {
         let mut noyau = Noyau::new(&banque(), FE).unwrap();
-        noyau.configurer(&configuration(48, false)); // cordes tenues
+        regler(&mut noyau, &configuration(48, false)); // cordes tenues
         let mut t = Transport::new();
         t.definir_session(session(vec![NoteSession { debut: 0, fin: 384, canal: 0, hauteur: 60, velocite: 100 }]), &mut noyau);
         t.agir(ActionTransport::Jouer { decompte: false }, &mut noyau);
@@ -373,8 +383,8 @@ mod tests {
     fn note_retiree_en_pleine_lecture_relachee_les_autres_continuent() {
         let mut noyau = Noyau::new(&banque(), FE).unwrap();
         let mut c = configuration(48, false);
-        c.canaux[1] = c.canaux[0];
-        noyau.configurer(&c);
+        c.canaux.push(c.canaux[0]);
+        regler(&mut noyau, &c);
         let a = NoteSession { debut: 0, fin: 384, canal: 0, hauteur: 60, velocite: 100 };
         let b = NoteSession { debut: 0, fin: 384, canal: 1, hauteur: 67, velocite: 100 };
         let mut t = Transport::new();
