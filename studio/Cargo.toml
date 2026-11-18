@@ -1,0 +1,15 @@
+[package]
+name = "studio"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+eframe = "0.37"
+moteur = { version = "0.1.0", path = "../moteur" }
+projet = { version = "0.1.0", path = "../projet" }
+rfd = "0.18.0"
+
+[dev-dependencies]
+egui_kittest = { version = "0.37", features = ["eframe"] }

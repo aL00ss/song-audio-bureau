@@ -1,0 +1,10 @@
+# Espace de travail : le moteur sonore, le modèle du projet et l'application native.
+# L'application Tauri (src-tauri) reste à part jusqu'à la bascule (phase N9).
+[workspace]
+resolver = "3"
+members = ["moteur", "projet", "studio"]
+exclude = ["src-tauri"]
+
+[profile.dev.package."*"]
+# les dépendances (son, rendu) restent rapides même en mode débogage
+opt-level = 2

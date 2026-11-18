@@ -74,6 +74,36 @@ vite mais aucune n'a encore porté une application de cette densité, et tout re
 les neuf étapes d'interface déjà construites et testées. **On garde l'interface web, avec des
 règles strictes** (tableau ci-dessus).
 
+## 5 bis. Décision du 2026-11-18 : interface native en Rust
+
+Après lecture du tableau ci-dessus, la décision est prise de **ne pas garder l'interface web
+sur le bureau** : les deux risques graves (le DOM face à des milliers d'éléments, les fenêtres
+de greffons impossibles à insérer) et la latence entre deux processus disparaissent avec une
+interface native, dans le même programme que le moteur. Le prix est connu et accepté : les neuf
+étapes d'interface sont à refaire.
+
+Choix de la bibliothèque d'interface :
+
+| Bibliothèque | Pour | Contre | Verdict |
+|---|---|---|---|
+| **egui** (eframe 0.37) | Mode immédiat : dessiner un piano roll, un arrangement, des formes d'onde est naturel ; très rapide (GPU) ; panneaux ancrables (egui_dock 0.21) ; **tests automatiques de l'interface** (egui_kittest, par l'accessibilité) ; MIT/Apache ; très actif | Look à travailler soi-même ; tout est redessiné à chaque image (sans coût notable sur GPU) | **Retenu** |
+| Slint 1.19 | Déclaratif, beau par défaut | Le dessin libre (piano roll, arrangement) est moins direct | Écarté |
+| iced 0.14 | Architecture claire (Elm) | Pas de panneaux ancrables officiels ; dessin libre plus lourd | Écarté |
+| Vizia 0.4 | Pensé pour l'audio | Plus jeune, communauté plus petite | Écarté |
+
+Conséquences :
+
+- **Un seul programme** : interface et moteur dans le même processus. Plus d'appels entre
+  processus : l'interface lit l'horloge, la position et les vumètres directement, et envoie ses
+  ordres au fil audio par la même file sans verrou.
+- **Le modèle du projet passe en Rust** (crate `projet`, pure et testée) ; le format des
+  fichiers reste **le même JSON** que la version web : un projet passe de l'un à l'autre.
+- **Les tests d'interface** se font avec egui_kittest (clics, saisie, lecture de l'écran par
+  l'accessibilité), sans navigateur.
+- **Le site web reste** dans le dépôt song-audio, avec son interface TypeScript.
+- **Transition sans trou** : l'application Tauri actuelle reste construite tant que
+  l'interface native n'a pas rattrapé ses fonctions ; ensuite, elle est retirée.
+
 ## 6. Le vrai enjeu : l'architecture du moteur
 
 Le moteur actuel est un bon socle mais il est **figé** : chaque canal est forcément un lecteur
@@ -91,9 +121,9 @@ un processus séparé** (comme Bitwig), le moteur restant dans le sien.
 
 1. **Rust pour le moteur : on garde.** C'est aujourd'hui l'un des deux meilleurs choix possibles
    (avec le C++), et le meilleur pour un petit nombre de développeurs, grâce à sa sûreté.
-2. **TypeScript / React dans Tauri pour l'interface : on garde**, avec quatre règles : le moteur
-   pousse ses données ; les vues lourdes en Canvas/WebGL ; les greffons dans des fenêtres
-   natives ; aucune logique sonore dans l'interface.
+2. **Interface : analyse initiale « garder TypeScript / React dans Tauri, avec des règles
+   strictes » ; décision finale (section 5 bis) : interface native en Rust avec egui**, dans le
+   même programme que le moteur. Les neuf étapes d'interface sont refaites.
 3. **Le langage n'est pas le facteur limitant.** Ce qui sépare un projet d'un concurrent
    sérieux, c'est l'architecture (graphe audio ouvert, greffons isolés, temps réel tenu) puis
    des années de fonctions et de contenu. FL Studio, écrit en Delphi, le prouve.
@@ -110,9 +140,12 @@ un processus séparé** (comme Bitwig), le moteur restant dans le sien.
 | M2 | **Premier synthétiseur natif** (soustractif : 2 oscillateurs, filtre résonant, enveloppes), choisi dans le navigateur d'instruments | Prouve le graphe ouvert ; premier son « studio » sans banque |
 | M3 | **Le moteur pousse ses mesures** (canal Tauri) au lieu d'être interrogé | Moins de coût, moins de retard, vumètres et position fluides |
 | M4 | **Budget de performance testé** : un test exige que le moteur rende 16 instruments chargés plus vite que le temps réel, avec une marge | Le temps réel devient une exigence vérifiée, pas un espoir |
-| M5 | Isolement des greffons dans un processus séparé, Canvas pour l'arrangement, ASIO | Inscrits au plan (phases G, M, O) : trop gros pour cette version |
+| M5 | Isolement des greffons dans un processus séparé, ASIO | Inscrits au plan (phases M, O) |
+| M6 | **Interface native en Rust (egui)**, modèle du projet en Rust, même format de fichier | Décision du 2026-11-18 (section 5 bis) ; reconstruction en phases N0 à N9 |
 
 ## Sources
+
+- [egui](https://github.com/emilk/egui), [egui_dock](https://github.com/Adanos020/egui_dock), [egui_kittest](https://github.com/emilk/egui/tree/master/crates/egui_kittest)
 
 - [VST 3.8 sous licence MIT, ASIO sous GPLv3 (KVR Audio)](https://www.kvraudio.com/news/steinberg-moves-vst-3-sdk-to-mit-open-source-license-asio-now-gplv3-65179)
 - [Communiqué de Steinberg, 29 octobre 2025](https://ocl-steinberg-live.steinberg.net/_storage/asset/819253/storage/master/Press%20Release%20-%202025-10-29%20-%20VST%203.8%20-%20EN.pdf)

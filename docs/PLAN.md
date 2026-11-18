@@ -39,6 +39,44 @@ interface (React, TypeScript)                moteur (Rust)
 Organisation du code Rust : une crate `moteur` (bibliothèque, sans Tauri, entièrement testée)
 et l'application `src-tauri` qui l'expose à l'interface.
 
+## Reconstruction native (décision du 2026-11-18)
+
+L'interface du bureau passe en **Rust natif (egui)**, dans le même programme que le moteur (voir
+[le rapport](RAPPORT-TECHNOLOGIES.md), section 5 bis). Organisation : un espace de travail Cargo
+avec trois crates : `moteur` (son), `projet` (modèle du projet, pur, testé, même format JSON que
+la version web), `studio` (l'application egui). L'application Tauri reste construite jusqu'à ce
+que l'interface native ait rattrapé ses fonctions, puis elle est retirée. Les tests d'interface
+passent par egui_kittest.
+
+| # | Phase | Contenu | Vérification |
+|---|---|---|---|
+| N0 | Fondations natives | Espace de travail, crate `projet` (modèle, temps, General MIDI, sérialisation compatible, démo, modèles), application egui : fenêtre, thème, barre de transport (lecture, arrêt, tempo, position, métronome), son par le moteur sans intermédiaire | Projet web relu à l'identique ; clic sur Lecture → le moteur joue |
+| N1 | Coquille | Panneaux ancrables (egui_dock) : navigateur, rack, piano roll, arrangement, mixer, instrument ; raccourcis ; disposition gardée | Tests egui_kittest de chaque panneau |
+| N2 | Navigateur | Recherche en ligne de fichiers MIDI, morceaux, import MIDI, instruments et synthés intégrés | Recherche et import |
+| N3 | Séquenceur pas à pas | Grille, peinture, vélocités, swing, longueur, sons de batterie | Tests du séquenceur |
+| N4 | Piano roll et vue d'instrument | Édition complète des notes (dessin GPU), clavier jouable, enregistrement | Tests d'édition |
+| N5 | Mixer | Tranches, égaliseur, faders, solo, vumètres, routage | Mesures des pistes |
+| N6 | Arrangement | Patterns, clips, mode morceau | Tests d'arrangement |
+| N7 | Vues avancées | Manche (doigté), cordes, harpe, pistons | Tests des doigtés |
+| N8 | Fichiers et orchestre | Ouvrir, enregistrer, exporter MIDI et WAV, annuler/rétablir, jouer avec l'orchestre | Tests de fichiers |
+| N9 | Bascule | Parité atteinte : retrait de Tauri et de l'interface web du dépôt, installeur natif | L'installeur natif remplace l'ancien |
+
+### Avancement de la reconstruction native
+
+- [x] **N0 — Fondations natives** : espace de travail Cargo (`moteur`, `projet`, `studio`) ;
+  crate `projet` en Rust (modèle, temps, General MIDI, sérialisation au même format JSON que la
+  version web avec les mêmes refus et les mêmes valeurs par défaut, pas, démo, notes à jouer) ;
+  application egui : thème sombre à accent orange, barre de transport (lecture/pause, arrêt,
+  métronome, PAT/SONG, tempo, afficheurs de position et de temps), menu Fichier (nouveau, démo,
+  ouvrir, enregistrer, enregistrer sous, avec les boîtes de dialogue du système), rack avec
+  témoins d'activité, muet, solo, volume et pas cliquables, ajout d'instruments et de synthés
+  intégrés, barre d'état, titre de fenêtre avec le point « modifié », raccourcis (Espace,
+  Maj+Espace, Ctrl+S, Ctrl+Maj+S, Ctrl+O) ; le moteur est appelé directement (même programme).
+  12 tests `projet`, 2 tests du pont, 3 tests d'interface egui_kittest (avec le vrai moteur),
+  21 tests du moteur. Deux défauts réels trouvés par les tests et corrigés : un verrou repris
+  dans la lecture du clavier (l'application se serait figée) et un caractère absent de la
+  police.
+
 ## Phases
 
 | # | Phase | Contenu | Vérification |

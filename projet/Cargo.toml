@@ -1,0 +1,11 @@
+[package]
+name = "projet"
+version = "0.1.0"
+edition = "2024"
+description = "Modèle du projet de song-audio : canaux, patterns, arrangement, mixage ; même format JSON que la version web"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

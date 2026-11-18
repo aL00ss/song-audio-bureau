@@ -63,6 +63,27 @@ jobs:
       - name: Construction de l'application
         run: npx tauri build --no-bundle
 
+  # L'application native (Rust, egui) : moteur, modèle du projet, interface (egui_kittest).
+  natif:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Bibliothèques système (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libgtk-3-dev libxkbcommon-dev
+      - name: Tests (moteur, projet, interface)
+        run: cargo test --workspace --release
+      - name: Construction de l'application
+        run: cargo build -p studio --release
+
   # La vraie fenêtre de bureau (WebView2), pilotée par Playwright.
   fenetre:
     needs: moteur

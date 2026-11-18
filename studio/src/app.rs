@@ -1,0 +1,478 @@
+//! L'application native : l'état du studio (projet, moteur, fichier) et son interface. Le moteur
+//! vit dans le même programme : aucune communication entre processus, l'interface lit
+//! directement l'horloge, la position et les vumètres.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use eframe::egui::{self, Color32, RichText, Sense, Stroke, Vec2};
+use moteur::transport::TICS_PAR_NOIRE;
+use moteur::{ActionTransport, EtatTransport, Moteur, SoundFont};
+use projet::gm::{FAMILLES, famille_instrument, nom_instrument, nom_son_batterie};
+use projet::lecture::ModeLecture;
+use projet::modele::OptionsCanal;
+use projet::pas::{definir_pas, velocites_des_pas};
+use projet::serialisation::{deserialiser, serialiser};
+use projet::synthes::PREREGLAGES_SOUSTRACTIF;
+use projet::temps::{formater_position, formater_secondes, tics_en_secondes};
+use projet::{Projet, SourceCanal};
+
+use crate::{pont, theme};
+
+/// Où trouver la banque General MIDI : à côté de l'exécutable, ou dans le dépôt (développement).
+pub fn chemin_banque() -> Option<PathBuf> {
+    const NOM: &str = "banques/GeneralUser-GS.sf2";
+    let candidats = [
+        std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(NOM))),
+        Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("../src-tauri").join(NOM)),
+    ];
+    candidats.into_iter().flatten().find(|c| c.exists())
+}
+
+pub struct Studio {
+    pub projet: Projet,
+    pub mode: ModeLecture,
+    pub metronome: bool,
+    /// Fichier d'où vient le projet ; None s'il n'a jamais été enregistré.
+    pub chemin: Option<PathBuf>,
+    /// Modifié depuis l'ouverture ou le dernier enregistrement.
+    pub modifie: bool,
+    pub message: Option<String>,
+    pub canal_selectionne: Option<String>,
+    moteur: Option<Moteur>,
+    /// Ce que le moteur joue déjà (pour ne lui envoyer que les changements).
+    envoye: Option<(Projet, ModeLecture)>,
+}
+
+impl Studio {
+    /// Démarre le moteur (sortie audio, ou horloge silencieuse sans carte son) avec la banque.
+    pub fn new(banque: Option<Arc<SoundFont>>) -> Self {
+        let (moteur, message) = match banque.map(Moteur::demarrer) {
+            Some(Ok(m)) => {
+                let message = m.sortie().is_none().then(|| "Aucune sortie audio détectée : branchez un casque ou des enceintes, puis relancez song-audio.".to_string());
+                (Some(m), message)
+            }
+            Some(Err(e)) => (None, Some(format!("Le son n'a pas pu démarrer : {e}"))),
+            None => (None, Some("Banque de sons introuvable (banques/GeneralUser-GS.sf2).".to_string())),
+        };
+        let projet = projet::demo::creer_demo();
+        let canal_selectionne = projet.canaux.first().map(|c| c.id.clone());
+        Studio { projet, mode: ModeLecture::Pattern, metronome: false, chemin: None, modifie: false, message, canal_selectionne, moteur, envoye: None }
+    }
+
+    pub fn depuis_disque() -> Self {
+        let banque = chemin_banque().and_then(|c| moteur::charger_banque(&c).ok());
+        Self::new(banque)
+    }
+
+    pub fn moteur(&self) -> Option<&Moteur> {
+        self.moteur.as_ref()
+    }
+
+    // ---------------------------------------------------------------- transport
+
+    pub fn etat_transport(&self) -> EtatTransport {
+        self.moteur.as_ref().map(|m| m.lecture().etat).unwrap_or(EtatTransport::Arret)
+    }
+
+    /// Position dans la boucle, en tics, prolongée depuis le dernier bloc rendu.
+    pub fn position(&self) -> f64 {
+        let Some(m) = &self.moteur else { return 0.0 };
+        let l = m.lecture();
+        if l.etat != EtatTransport::Lecture {
+            return l.position;
+        }
+        let ecoule = m.horloge().saturating_sub(l.horloge) as f64 / m.frequence() as f64;
+        (l.position + ecoule * l.tempo * TICS_PAR_NOIRE / 60.0) % l.longueur.max(1) as f64
+    }
+
+    pub fn basculer_lecture(&mut self) {
+        self.synchroniser();
+        let action = if self.etat_transport() == EtatTransport::Lecture { ActionTransport::Pause } else { ActionTransport::Jouer { decompte: false } };
+        if let Some(m) = &mut self.moteur {
+            m.transport(action);
+        }
+    }
+
+    pub fn arreter(&mut self) {
+        if let Some(m) = &mut self.moteur {
+            m.transport(ActionTransport::Arreter);
+        }
+    }
+
+    pub fn changer_mode(&mut self, mode: ModeLecture) {
+        if mode != self.mode {
+            self.arreter();
+            self.mode = mode;
+        }
+    }
+
+    pub fn basculer_metronome(&mut self) {
+        self.metronome = !self.metronome;
+        if let Some(m) = &mut self.moteur {
+            m.transport(ActionTransport::Metronome(self.metronome));
+        }
+    }
+
+    /// Envoie au moteur ce qui a changé dans le projet (réglages et notes), même en pleine lecture.
+    pub fn synchroniser(&mut self) {
+        let a_jour = matches!(&self.envoye, Some((p, mode)) if *p == self.projet && *mode == self.mode);
+        if a_jour {
+            return;
+        }
+        if let Some(m) = &mut self.moteur {
+            m.configurer(pont::configuration(&self.projet));
+            m.definir_session(pont::session(&self.projet, self.mode));
+        }
+        self.envoye = Some((self.projet.clone(), self.mode));
+    }
+
+    // ---------------------------------------------------------------- projet
+
+    /// Applique une modification au projet (marque le projet comme modifié).
+    pub fn modifier(&mut self, f: impl FnOnce(&mut Projet)) {
+        f(&mut self.projet);
+        self.modifie = true;
+    }
+
+    pub fn remplacer_projet(&mut self, projet: Projet, chemin: Option<PathBuf>) {
+        self.arreter();
+        self.canal_selectionne = projet.canaux.first().map(|c| c.id.clone());
+        self.projet = projet;
+        self.chemin = chemin;
+        self.modifie = false;
+    }
+
+    pub fn ajouter_canal(&mut self, options: OptionsCanal) {
+        let mut essai = self.projet.clone();
+        let id = essai.ajouter_canal(options);
+        match projet::modele::attribuer_canaux_midi(&essai.canaux) {
+            Ok(_) => {
+                self.projet = essai;
+                self.modifie = true;
+                self.canal_selectionne = Some(id);
+            }
+            Err(e) => self.message = Some(e),
+        }
+    }
+
+    pub fn ouvrir(&mut self, chemin: &Path) {
+        match std::fs::read_to_string(chemin).map_err(|e| e.to_string()).and_then(|t| deserialiser(&t).map_err(|e| e.0)) {
+            Ok(p) => {
+                self.remplacer_projet(p, Some(chemin.to_path_buf()));
+                self.message = None;
+            }
+            Err(e) => self.message = Some(format!("Projet illisible : {e}")),
+        }
+    }
+
+    /// Écrit le projet dans un fichier temporaire puis le renomme : un plantage en pleine
+    /// écriture ne laisse jamais un projet à moitié écrit.
+    pub fn enregistrer_dans(&mut self, chemin: &Path) -> Result<(), String> {
+        let temporaire = chemin.with_extension("json.tmp");
+        std::fs::write(&temporaire, serialiser(&self.projet)).map_err(|e| e.to_string())?;
+        std::fs::rename(&temporaire, chemin).map_err(|e| e.to_string())?;
+        self.chemin = Some(chemin.to_path_buf());
+        self.modifie = false;
+        Ok(())
+    }
+
+    fn enregistrer(&mut self, sous: bool) {
+        let chemin = match (&self.chemin, sous) {
+            (Some(c), false) => Some(c.clone()),
+            _ => rfd::FileDialog::new()
+                .set_title("Enregistrer le projet")
+                .add_filter("Projet song-audio", &["json"])
+                .set_file_name(format!("{}.song-audio.json", self.projet.nom))
+                .save_file(),
+        };
+        if let Some(c) = chemin {
+            if let Err(e) = self.enregistrer_dans(&c) {
+                self.message = Some(format!("Enregistrement impossible : {e}"));
+            }
+        }
+    }
+
+    fn choisir_et_ouvrir(&mut self) {
+        if let Some(c) = rfd::FileDialog::new().set_title("Ouvrir un projet").add_filter("Projet song-audio", &["json"]).pick_file() {
+            self.ouvrir(&c);
+        }
+    }
+
+    /// Titre de la fenêtre : nom du projet, et un point s'il n'est pas enregistré.
+    pub fn titre(&self) -> String {
+        let nom = self
+            .chemin
+            .as_ref()
+            .and_then(|c| c.file_name())
+            .map(|n| n.to_string_lossy().trim_end_matches(".json").trim_end_matches(".song-audio").to_string())
+            .unwrap_or_else(|| self.projet.nom.clone());
+        format!("{}{nom} — song-audio", if self.modifie { "• " } else { "" })
+    }
+
+    // ---------------------------------------------------------------- interface
+
+    fn raccourcis(&mut self, ctx: &egui::Context) {
+        // hors de la fermeture : interroger le contexte pendant `input` reprendrait son verrou
+        let saisie = ctx.text_edit_focused();
+        let (espace, maj, ctrl_s, ctrl_maj_s, ctrl_o) = ctx.input(|i| {
+            (
+                !saisie && i.key_pressed(egui::Key::Space) && !i.modifiers.shift,
+                !saisie && i.key_pressed(egui::Key::Space) && i.modifiers.shift,
+                i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::S),
+                i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::S),
+                i.modifiers.command && i.key_pressed(egui::Key::O),
+            )
+        });
+        if espace {
+            self.basculer_lecture();
+        }
+        if maj {
+            self.arreter();
+        }
+        if ctrl_s || ctrl_maj_s {
+            self.enregistrer(ctrl_maj_s);
+        }
+        if ctrl_o {
+            self.choisir_et_ouvrir();
+        }
+    }
+
+    fn barre_transport(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            // le nom en un seul bloc : « song » puis « -audio » en couleur, sans espace entre eux
+            let mut nom = egui::text::LayoutJob::default();
+            let police = egui::TextStyle::Button.resolve(ui.style());
+            nom.append("song", 0.0, egui::TextFormat::simple(police.clone(), theme::TEXTE));
+            nom.append("-audio", 0.0, egui::TextFormat::simple(police, theme::ACCENT));
+            ui.label(nom);
+            ui.separator();
+            ui.menu_button("Fichier", |ui| {
+                if ui.button("Nouveau projet").clicked() {
+                    self.remplacer_projet(projet_vide(), None);
+                    ui.close();
+                }
+                if ui.button("Démo").clicked() {
+                    self.remplacer_projet(projet::demo::creer_demo(), None);
+                    ui.close();
+                }
+                ui.separator();
+                if ui.button("Ouvrir un projet…   Ctrl+O").clicked() {
+                    ui.close();
+                    self.choisir_et_ouvrir();
+                }
+                if ui.button("Enregistrer   Ctrl+S").clicked() {
+                    ui.close();
+                    self.enregistrer(false);
+                }
+                if ui.button("Enregistrer sous…   Ctrl+Maj+S").clicked() {
+                    ui.close();
+                    self.enregistrer(true);
+                }
+            });
+            ui.separator();
+            let lecture = self.etat_transport() == EtatTransport::Lecture;
+            let bouton_lecture = egui::Button::new(RichText::new(if lecture { "Pause" } else { "Lecture" }).strong().color(Color32::BLACK))
+                .fill(if lecture { theme::ACTIF } else { theme::ACCENT })
+                .min_size(Vec2::new(72.0, 24.0));
+            if ui.add(bouton_lecture).on_hover_text("Lecture / pause (Espace)").clicked() {
+                self.basculer_lecture();
+            }
+            if ui.add(egui::Button::new("Stop").min_size(Vec2::new(44.0, 24.0))).on_hover_text("Arrêt (Maj+Espace)").clicked() {
+                self.arreter();
+            }
+            if ui.selectable_label(self.metronome, "Métro").on_hover_text("Métronome : un clic à chaque temps").clicked() {
+                self.basculer_metronome();
+            }
+            ui.separator();
+            for (mode, texte, aide) in [(ModeLecture::Pattern, "PAT", "Le pattern actif en boucle"), (ModeLecture::Morceau, "SONG", "Tout l'arrangement")] {
+                if ui.selectable_label(self.mode == mode, texte).on_hover_text(aide).clicked() {
+                    self.changer_mode(mode);
+                }
+            }
+            ui.separator();
+            let mut tempo = self.projet.tempo;
+            let reponse = ui.add(egui::DragValue::new(&mut tempo).range(20.0..=300.0).speed(0.5).suffix(" BPM").max_decimals(1));
+            if reponse.changed() {
+                self.modifier(|p| p.tempo = tempo);
+            }
+            let position = self.position();
+            afficheur(ui, &formater_position(position, self.projet.signature), "Position : mesure:temps:tic");
+            afficheur(ui, &formater_secondes(tics_en_secondes(position, self.projet.tempo)), "Temps écoulé dans la boucle");
+        });
+    }
+
+    fn instruments(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Instruments");
+        if ui.button("+ Batterie").on_hover_text("Une ligne de batterie, en pas à pas").clicked() {
+            self.ajouter_canal(OptionsCanal { batterie: true, ..Default::default() });
+        }
+        egui::CollapsingHeader::new(RichText::new("Synthés intégrés").color(theme::ACCENT)).default_open(true).show(ui, |ui| {
+            for (i, p) in PREREGLAGES_SOUSTRACTIF.iter().enumerate() {
+                if ui.button(format!("+ {}", p.nom)).clicked() {
+                    self.ajouter_canal(OptionsCanal { source: SourceCanal::Soustractif, programme: i as u8, ..Default::default() });
+                }
+            }
+        });
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            for (f, famille) in FAMILLES.iter().enumerate() {
+                egui::CollapsingHeader::new(*famille).show(ui, |ui| {
+                    for programme in (f * 8) as u8..(f * 8 + 8) as u8 {
+                        if ui.button(format!("+ {}", nom_instrument(programme))).clicked() {
+                            self.ajouter_canal(OptionsCanal { programme, ..Default::default() });
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    fn rack(&mut self, ui: &mut egui::Ui) {
+        let pattern = self.projet.pattern_actif().clone();
+        let pas_courant = (self.etat_transport() == EtatTransport::Lecture).then(|| (self.position() / 24.0) as usize);
+        let voix: Vec<u32> = self.moteur.as_ref().map(|m| m.mesures().voix).unwrap_or_default();
+        let midi = projet::modele::attribuer_canaux_midi(&self.projet.canaux).unwrap_or_default();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(&pattern.nom).strong());
+            ui.label(RichText::new(format!("{} instruments", self.projet.canaux.len())).color(theme::DISCRET));
+        });
+        ui.separator();
+        let canaux = self.projet.canaux.clone();
+        egui::ScrollArea::both().show(ui, |ui| {
+            for canal in &canaux {
+                ui.horizontal(|ui| {
+                    // témoin d'activité
+                    let actif = midi.get(&canal.id).and_then(|&m| voix.get(m as usize)).copied().unwrap_or(0) > 0;
+                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+                    ui.painter().circle_filled(rect.center(), 4.0, if actif { theme::ACTIF } else { theme::BORD });
+                    let mut muet = canal.muet;
+                    if ui.toggle_value(&mut muet, "M").on_hover_text(format!("Muet : {}", canal.nom)).changed() {
+                        let id = canal.id.clone();
+                        self.modifier(|p| p.canal_mut(&id).iter_mut().for_each(|c| c.muet = muet));
+                    }
+                    let mut solo = canal.solo;
+                    if ui.toggle_value(&mut solo, "S").on_hover_text(format!("Solo : {}", canal.nom)).changed() {
+                        let id = canal.id.clone();
+                        self.modifier(|p| p.canal_mut(&id).iter_mut().for_each(|c| c.solo = solo));
+                    }
+                    let mut volume = canal.volume;
+                    if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).on_hover_text(format!("Volume : {}", canal.nom)).changed() {
+                        let id = canal.id.clone();
+                        self.modifier(|p| p.canal_mut(&id).iter_mut().for_each(|c| c.volume = volume));
+                    }
+                    let selectionne = self.canal_selectionne.as_deref() == Some(canal.id.as_str());
+                    let titre = if canal.batterie { format!("Batterie : {}", nom_son_batterie(canal.note_defaut)) } else { famille_ou_synthe(canal) };
+                    let nom = egui::Button::new(RichText::new(&canal.nom).color(couleur(&canal.couleur)))
+                        .min_size(Vec2::new(150.0, 20.0))
+                        .selected(selectionne);
+                    if ui.add(nom).on_hover_text(titre).clicked() {
+                        self.canal_selectionne = Some(canal.id.clone());
+                    }
+                    // pas du séquenceur
+                    let pas = velocites_des_pas(&pattern, &canal.id, canal.note_defaut);
+                    for (i, &v) in pas.iter().enumerate().take(64) {
+                        let taille = Vec2::new(16.0, 20.0);
+                        let (rect, reponse) = ui.allocate_exact_size(taille, Sense::click());
+                        let groupe_sombre = (i / 4) % 2 == 1;
+                        let fond = if v > 0 {
+                            couleur(&canal.couleur)
+                        } else if groupe_sombre {
+                            theme::PANNEAU_2
+                        } else {
+                            theme::FOND
+                        };
+                        ui.painter().rect_filled(rect.shrink(1.0), 2.0, fond);
+                        if pas_courant.map(|p| p % pas.len()) == Some(i) {
+                            ui.painter().rect_stroke(rect.shrink(1.0), 2.0, Stroke::new(1.5, Color32::WHITE), egui::StrokeKind::Inside);
+                        }
+                        if reponse.clicked() {
+                            let id = canal.id.clone();
+                            self.modifier(|p| definir_pas(p, &id, i as u32, None));
+                        }
+                        if reponse.secondary_clicked() {
+                            let id = canal.id.clone();
+                            self.modifier(|p| definir_pas(p, &id, i as u32, Some(false)));
+                        }
+                    }
+                });
+            }
+        });
+    }
+}
+
+fn projet_vide() -> Projet {
+    let mut p = projet::modele::creer_projet("Nouveau projet");
+    for (nom, note) in [("Grosse caisse", 36), ("Clap", 39), ("Charleston", 42), ("Caisse claire", 38)] {
+        p.ajouter_canal(OptionsCanal { batterie: true, nom: Some(nom.into()), note_defaut: Some(note), ..Default::default() });
+    }
+    let id = p.pattern_actif.clone();
+    p.ajouter_clip(&id, 0, 0);
+    p
+}
+
+fn famille_ou_synthe(canal: &projet::Canal) -> String {
+    match canal.source {
+        SourceCanal::Soustractif => "Synthé intégré".into(),
+        SourceCanal::Soundfont => format!("{} ({})", nom_instrument(canal.programme), famille_instrument(canal.programme)),
+    }
+}
+
+fn couleur(hex: &str) -> Color32 {
+    let h = hex.trim_start_matches('#');
+    let octet = |i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or("80"), 16).unwrap_or(128);
+    Color32::from_rgb(octet(0), octet(2), octet(4))
+}
+
+fn afficheur(ui: &mut egui::Ui, texte: &str, aide: &str) {
+    egui::Frame::new().fill(theme::ECRAN).corner_radius(3).inner_margin(egui::Margin::symmetric(8, 3)).show(ui, |ui| {
+        ui.label(RichText::new(texte).monospace().color(theme::ACTIF));
+    })
+    .response
+    .on_hover_text(aide);
+}
+
+impl eframe::App for Studio {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        self.raccourcis(&ctx);
+        egui::Panel::top("transport").show(ui, |ui| {
+            ui.add_space(4.0);
+            self.barre_transport(ui);
+            ui.add_space(4.0);
+        });
+        let etat = match self.etat_transport() {
+            EtatTransport::Lecture => "Lecture",
+            EtatTransport::Pause => "Pause",
+            EtatTransport::Arret => "Prêt",
+        };
+        egui::Panel::bottom("etat").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if let Some(m) = &self.message {
+                    ui.label(RichText::new(m).color(theme::ACCENT));
+                } else {
+                    ui.label(RichText::new("Espace : lecture/pause · Maj+Espace : arrêt · Ctrl+S : enregistrer").color(theme::DISCRET));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(etat);
+                    if let Some(m) = &self.moteur {
+                        ui.label(RichText::new(m.sortie().unwrap_or("sans sortie audio")).color(theme::DISCRET));
+                    }
+                });
+            });
+        });
+        egui::Panel::left("instruments").resizable(true).default_size(220.0).show(ui, |ui| self.instruments(ui));
+        egui::CentralPanel::default().show(ui, |ui| self.rack(ui));
+        // le son suit l'interface, à chaque image
+        self.synchroniser();
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.titre()));
+        if self.etat_transport() == EtatTransport::Lecture {
+            ctx.request_repaint();
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+    }
+}
+
+pub fn appliquer_theme(ctx: &egui::Context) {
+    theme::appliquer(ctx);
+}
