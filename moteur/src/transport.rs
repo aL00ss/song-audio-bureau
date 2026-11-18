@@ -194,12 +194,14 @@ impl Transport {
             ActionTransport::Pause => {
                 if self.etat == EtatTransport::Lecture {
                     self.relacher_tout(noyau);
+                    noyau.couper_clics();
                     self.position = self.position();
                     self.etat = EtatTransport::Pause;
                 }
             }
             ActionTransport::Arreter => {
                 self.relacher_tout(noyau);
+                noyau.couper_clics();
                 self.position = 0.0;
                 self.decompte = 0.0;
                 self.etat = EtatTransport::Arret;

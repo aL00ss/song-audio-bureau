@@ -107,6 +107,8 @@ test('métronome : le bouton existe sur le bureau et le maître sonne même sans
   expect(await crete(0, 1500)).toBeGreaterThan(0.05)
   await page.getByTestId('stop').click()
   await page.getByTestId('metronome').click()
+  await page.waitForTimeout(300) // relevés d'avant l'arrêt écoulés
+  await crete(0, 100)
   await page.getByTestId('lecture').click()
   expect(await crete(0, 1200)).toBeLessThan(0.0005)
   await page.getByTestId('stop').click()

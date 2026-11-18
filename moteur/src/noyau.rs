@@ -252,9 +252,15 @@ impl Noyau {
         }
     }
 
+    /// Oublie les clics de métronome pas encore entendus (à l'arrêt du transport).
+    pub fn couper_clics(&mut self) {
+        self.clics.clear();
+    }
+
     /// Coupe net ce qui sonne et oublie ce qui était programmé.
     pub fn tout_couper(&mut self) {
         self.file.clear();
+        self.clics.clear();
         for canal in self.canaux.iter_mut() {
             canal.synth.note_off_all(true);
             canal.tenues = [false; 128];
