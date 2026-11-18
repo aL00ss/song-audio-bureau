@@ -76,6 +76,13 @@ passent par egui_kittest.
   21 tests du moteur. Deux défauts réels trouvés par les tests et corrigés : un verrou repris
   dans la lecture du clavier (l'application se serait figée) et un caractère absent de la
   police.
+- [x] **N1 — Coquille** : six panneaux ancrables (egui_dock 0.21 ; egui et eframe redescendus
+  en 0.36 pour lui être compatibles) : Navigateur, Rack d'instruments, Arrangement, Piano roll,
+  Instrument, Mixage ; disposition par défaut, gardée d'une session à l'autre (stockage
+  d'eframe), F5 à F9 et barre des panneaux pour ouvrir, fermer ou amener au premier plan,
+  bouton « Disposition par défaut ». Les panneaux encore vides disent à quelle phase ils
+  arrivent. 5 tests unitaires (dont la disposition relue par le vrai stockage d'eframe),
+  4 tests d'interface.
 
 ## Phases
 

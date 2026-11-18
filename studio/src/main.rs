@@ -18,7 +18,9 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             studio::app::appliquer_theme(&cc.egui_ctx);
-            Ok(Box::new(Studio::depuis_disque()))
+            let mut studio = Studio::depuis_disque();
+            studio.reprendre_disposition(cc.storage);
+            Ok(Box::new(studio))
         }),
     )
 }

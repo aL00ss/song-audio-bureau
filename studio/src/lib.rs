@@ -2,6 +2,7 @@
 //! programme.
 
 pub mod app;
+pub mod coquille;
 pub mod pont;
 pub mod theme;
 

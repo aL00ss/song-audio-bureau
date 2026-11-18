@@ -8,6 +8,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use moteur::EtatTransport;
 use studio::Studio;
+use studio::coquille::Panneau;
 
 fn studio() -> Harness<'static, Studio> {
     let chemin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src-tauri/banques/GeneralUser-GS.sf2");
@@ -81,4 +82,26 @@ fn enregistrer_puis_rouvrir_a_l_identique() {
     assert_eq!(h.state().projet, projet);
     assert!(h.state().titre().starts_with("essai-natif-"));
     std::fs::remove_file(&chemin).ok();
+}
+
+#[test]
+fn les_six_panneaux_sont_la_et_f6_ferme_puis_rouvre_le_rack() {
+    let mut h = studio();
+    for titre in ["Navigateur", "Rack d'instruments", "Arrangement", "Piano roll", "Instrument", "Mixage"] {
+        assert!(h.query_all_by_label(titre).next().is_some(), "onglet {titre}");
+    }
+    assert_eq!(h.state().panneaux_ouverts().len(), 6);
+    h.key_press(eframe::egui::Key::F6);
+    h.step();
+    assert!(!h.state().panneaux_ouverts().contains(&Panneau::Rack));
+    h.key_press(eframe::egui::Key::F6);
+    h.step();
+    assert!(h.state().panneaux_ouverts().contains(&Panneau::Rack));
+    // fermé par le bouton de la barre d'état, rétabli par « Disposition par défaut »
+    h.state_mut().basculer_panneau(Panneau::Arrangement);
+    h.step();
+    assert_eq!(h.state().panneaux_ouverts().len(), 5);
+    h.get_by_label("Disposition par défaut").click();
+    h.step();
+    assert_eq!(h.state().panneaux_ouverts().len(), 6);
 }

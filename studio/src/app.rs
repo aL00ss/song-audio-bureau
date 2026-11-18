@@ -17,7 +17,12 @@ use projet::synthes::PREREGLAGES_SOUSTRACTIF;
 use projet::temps::{formater_position, formater_secondes, tics_en_secondes};
 use projet::{Projet, SourceCanal};
 
+use crate::coquille::{self, Panneau, Vue};
 use crate::{pont, theme};
+use egui_dock::{DockArea, DockState};
+
+/// Clé de la disposition des panneaux dans le stockage de l'application.
+pub const CLE_DISPOSITION: &str = "disposition";
 
 /// Où trouver la banque General MIDI : à côté de l'exécutable, ou dans le dépôt (développement).
 pub fn chemin_banque() -> Option<PathBuf> {
@@ -42,6 +47,8 @@ pub struct Studio {
     moteur: Option<Moteur>,
     /// Ce que le moteur joue déjà (pour ne lui envoyer que les changements).
     envoye: Option<(Projet, ModeLecture)>,
+    /// Disposition des panneaux (sortie le temps de dessiner les onglets).
+    pub dock: Option<DockState<Panneau>>,
 }
 
 impl Studio {
@@ -57,7 +64,41 @@ impl Studio {
         };
         let projet = projet::demo::creer_demo();
         let canal_selectionne = projet.canaux.first().map(|c| c.id.clone());
-        Studio { projet, mode: ModeLecture::Pattern, metronome: false, chemin: None, modifie: false, message, canal_selectionne, moteur, envoye: None }
+        Studio {
+            projet,
+            mode: ModeLecture::Pattern,
+            metronome: false,
+            chemin: None,
+            modifie: false,
+            message,
+            canal_selectionne,
+            moteur,
+            envoye: None,
+            dock: Some(coquille::disposition_par_defaut()),
+        }
+    }
+
+    /// Reprend la disposition des panneaux de la dernière session, si elle est lisible.
+    pub fn reprendre_disposition(&mut self, stockage: Option<&dyn eframe::Storage>) {
+        if let Some(dock) = stockage.and_then(|s| eframe::get_value::<DockState<Panneau>>(s, CLE_DISPOSITION)) {
+            if !coquille::ouverts(&dock).is_empty() {
+                self.dock = Some(dock);
+            }
+        }
+    }
+
+    pub fn panneaux_ouverts(&self) -> Vec<Panneau> {
+        self.dock.as_ref().map(coquille::ouverts).unwrap_or_default()
+    }
+
+    pub fn basculer_panneau(&mut self, panneau: Panneau) {
+        if let Some(dock) = &mut self.dock {
+            coquille::basculer(dock, panneau);
+        }
+    }
+
+    pub fn disposition_par_defaut(&mut self) {
+        self.dock = Some(coquille::disposition_par_defaut());
     }
 
     pub fn depuis_disque() -> Self {
@@ -236,6 +277,13 @@ impl Studio {
         if ctrl_o {
             self.choisir_et_ouvrir();
         }
+        for panneau in Panneau::TOUS {
+            if let Some(touche) = panneau.touche() {
+                if ctx.input(|i| i.key_pressed(touche)) {
+                    self.basculer_panneau(panneau);
+                }
+            }
+        }
     }
 
     fn barre_transport(&mut self, ui: &mut egui::Ui) {
@@ -302,7 +350,7 @@ impl Studio {
         });
     }
 
-    fn instruments(&mut self, ui: &mut egui::Ui) {
+    pub fn instruments(&mut self, ui: &mut egui::Ui) {
         ui.heading("Instruments");
         if ui.button("+ Batterie").on_hover_text("Une ligne de batterie, en pas à pas").clicked() {
             self.ajouter_canal(OptionsCanal { batterie: true, ..Default::default() });
@@ -327,7 +375,7 @@ impl Studio {
         });
     }
 
-    fn rack(&mut self, ui: &mut egui::Ui) {
+    pub fn rack(&mut self, ui: &mut egui::Ui) {
         let pattern = self.projet.pattern_actif().clone();
         let pas_courant = (self.etat_transport() == EtatTransport::Lecture).then(|| (self.position() / 24.0) as usize);
         let voix: Vec<u32> = self.moteur.as_ref().map(|m| m.mesures().voix).unwrap_or_default();
@@ -432,6 +480,12 @@ fn afficheur(ui: &mut egui::Ui, texte: &str, aide: &str) {
 }
 
 impl eframe::App for Studio {
+    fn save(&mut self, stockage: &mut dyn eframe::Storage) {
+        if let Some(dock) = &self.dock {
+            eframe::set_value(stockage, CLE_DISPOSITION, dock);
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.raccourcis(&ctx);
@@ -457,11 +511,31 @@ impl eframe::App for Studio {
                     if let Some(m) = &self.moteur {
                         ui.label(RichText::new(m.sortie().unwrap_or("sans sortie audio")).color(theme::DISCRET));
                     }
+                    ui.separator();
+                    if ui.small_button("Disposition par défaut").clicked() {
+                        self.disposition_par_defaut();
+                    }
+                    let ouverts = self.panneaux_ouverts();
+                    for panneau in Panneau::TOUS.iter().rev() {
+                        let aide = match panneau.touche() {
+                            Some(t) => format!("{} ({t:?})", panneau.titre()),
+                            None => panneau.titre().to_string(),
+                        };
+                        if ui.selectable_label(ouverts.contains(panneau), RichText::new(panneau.titre()).small()).on_hover_text(aide).clicked() {
+                            self.basculer_panneau(*panneau);
+                        }
+                    }
                 });
             });
         });
-        egui::Panel::left("instruments").resizable(true).default_size(220.0).show(ui, |ui| self.instruments(ui));
-        egui::CentralPanel::default().show(ui, |ui| self.rack(ui));
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(theme::FOND)).show(ui, |ui| {
+            // la disposition sort de l'état le temps que les onglets se dessinent avec lui
+            if let Some(mut dock) = self.dock.take() {
+                let style = egui_dock::Style::from_egui(ui.style());
+                DockArea::new(&mut dock).style(style).show_inside(ui, &mut Vue { studio: self });
+                self.dock = Some(dock);
+            }
+        });
         // le son suit l'interface, à chaque image
         self.synchroniser();
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.titre()));

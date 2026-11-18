@@ -6,10 +6,13 @@ license = "GPL-3.0-only"
 publish = false
 
 [dependencies]
-eframe = "0.37"
+eframe = { version = "0.36", features = ["persistence"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+egui_dock = { version = "0.21", features = ["serde"] }
 moteur = { version = "0.1.0", path = "../moteur" }
 projet = { version = "0.1.0", path = "../projet" }
 rfd = "0.18.0"
 
 [dev-dependencies]
-egui_kittest = { version = "0.37", features = ["eframe"] }
+egui_kittest = { version = "0.36", features = ["eframe"] }
