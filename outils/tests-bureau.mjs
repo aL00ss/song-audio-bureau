@@ -11,9 +11,16 @@ const application = exe
   ? spawn(exe, [], { env, stdio: 'inherit' })
   : spawn('npx', ['tauri', 'dev'], { env, stdio: 'inherit', shell: true })
 
-async function attendreFenetre(delai = 600_000) {
+let sortie = null
+application.on('exit', (code, signal) => {
+  sortie = { code, signal }
+  console.error(`L'application s'est arrêtée (code ${code}, signal ${signal})`)
+})
+
+async function attendreFenetre(delai = 300_000) {
   const fin = Date.now() + delai
   while (Date.now() < fin) {
+    if (sortie && exe) throw new Error("L'application s'est arrêtée avant d'ouvrir sa fenêtre")
     try {
       const pages = await (await fetch(`http://localhost:${PORT}/json/list`)).json()
       if (pages.some((p) => p.type === 'page')) return
@@ -21,6 +28,11 @@ async function attendreFenetre(delai = 600_000) {
       // pas encore prête
     }
     await new Promise((r) => setTimeout(r, 1000))
+  }
+  if (process.platform === 'win32') {
+    // diagnostic : l'application et WebView2 tournent-ils ?
+    spawnSync('tasklist', ['/fi', 'imagename eq song-audio-bureau.exe'], { stdio: 'inherit' })
+    spawnSync('tasklist', ['/fi', 'imagename eq msedgewebview2.exe'], { stdio: 'inherit' })
   }
   throw new Error('La fenêtre de l’application ne s’est pas ouverte')
 }
