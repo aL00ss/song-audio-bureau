@@ -1,0 +1,82 @@
+@import 'tailwindcss';
+
+/* Thème sombre et dense d'un studio de musique. Les couleurs sont des variables : la charte
+   graphique complète arrive à l'étape 1 bis. */
+@theme {
+  --color-fond: #1b1f24;
+  --color-panneau: #252a31;
+  --color-panneau-2: #2d333b;
+  --color-bord: #3a414b;
+  --color-texte: #dfe3e8;
+  --color-discret: #8b949e;
+  --color-accent: #f5a524;
+  --color-actif: #4cc38a;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-fond);
+  color: var(--color-texte);
+  font: 12px/1.4 var(--font-sans);
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Panneaux ancrables : thème Dockview sombre, aux couleurs du studio. */
+.theme-studio {
+  --dv-group-view-background-color: var(--color-panneau);
+  --dv-tabs-and-actions-container-background-color: #1f242a;
+  --dv-tabs-and-actions-container-height: 26px;
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-activegroup-visiblepanel-tab-background-color: var(--color-panneau);
+  --dv-activegroup-hiddenpanel-tab-background-color: #1f242a;
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-panneau);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: #1f242a;
+  --dv-activegroup-visiblepanel-tab-color: var(--color-accent);
+  --dv-activegroup-hiddenpanel-tab-color: var(--color-discret);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--color-texte);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--color-discret);
+  --dv-tab-divider-color: #15191e;
+  --dv-separator-border: #11151a;
+  --dv-paneview-header-border-color: #11151a;
+  --dv-sash-color: #11151a;
+  --dv-active-sash-color: var(--color-accent);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  font-family: var(--font-sans);
+}
+
+/* Fader du mixer : curseur natif vertical, glissière de console. */
+.fader {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  appearance: none;
+  background: linear-gradient(90deg, transparent 42%, #0d1013 42%, #0d1013 58%, transparent 58%);
+}
+.fader::-webkit-slider-thumb {
+  appearance: none;
+  width: 22px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid #000;
+  background: linear-gradient(#c9ced6, #8d949e 45%, #5d636c 55%, #a9afb8);
+}
+.fader::-moz-range-thumb {
+  width: 22px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid #000;
+  background: linear-gradient(#c9ced6, #8d949e 45%, #5d636c 55%, #a9afb8);
+}

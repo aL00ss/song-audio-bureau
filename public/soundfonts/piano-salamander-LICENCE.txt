@@ -1,0 +1,10 @@
+piano-salamander.sf3
+
+Tiré de Salamander Grand Piano V3, par Alexander Holm (Yamaha C5 enregistré par l'auteur).
+Licence : Creative Commons Attribution 3.0 (CC BY 3.0)
+https://creativecommons.org/licenses/by/3.0/
+Source : https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html
+
+Modifications faites pour song-audio (outils/banques/piano.py) : 5 couches de vélocité gardées
+sur 16, échantillons raccourcis (14 s dans le grave à 4 s dans l'aigu) avec un fondu final,
+sons de relâchement et de pédale retirés, compression Ogg Vorbis au format SoundFont 3.

@@ -1,0 +1,57 @@
+[
+  {
+    "id": "lettre-a-elise",
+    "titre": "La Lettre à Élise",
+    "compositeur": "Ludwig van Beethoven",
+    "oeuvre": "Bagatelle n° 25 en la mineur, WoO 59",
+    "annee": "1810",
+    "duree": 178.8,
+    "credit": "Gravure : Stelios Samelis, Mutopia Project (domaine public). Interprétation : Alexandre Besnier.",
+    "licence": "Domaine public",
+    "fichier": "morceaux/lettre-a-elise.mid"
+  },
+  {
+    "id": "clair-de-lune",
+    "titre": "Clair de lune",
+    "compositeur": "Claude Debussy",
+    "oeuvre": "Suite bergamasque, L. 75",
+    "annee": "1905",
+    "duree": 292.8,
+    "credit": "Gravure : Keith OHara, Mutopia Project (domaine public). Interprétation : Alexandre Besnier.",
+    "licence": "Domaine public",
+    "fichier": "morceaux/clair-de-lune.mid"
+  },
+  {
+    "id": "marche-turque",
+    "titre": "Marche turque",
+    "compositeur": "Wolfgang Amadeus Mozart",
+    "oeuvre": "Sonate n° 11, K. 331 — Rondo alla turca",
+    "annee": "1783",
+    "duree": 212.6,
+    "credit": "Gravure : Rune Zedeler et Chris Sawer, Mutopia Project (domaine public). Interprétation : Alexandre Besnier.",
+    "licence": "Domaine public",
+    "fichier": "morceaux/marche-turque.mid"
+  },
+  {
+    "id": "fantaisie-impromptu",
+    "titre": "Fantaisie-Impromptu",
+    "compositeur": "Frédéric Chopin",
+    "oeuvre": "Fantaisie-Impromptu en do dièse mineur, op. 66",
+    "annee": "1834",
+    "duree": 276.1,
+    "credit": "Gravure : Guy D. Lederfein, Mutopia Project (domaine public). Interprétation : Alexandre Besnier.",
+    "licence": "Domaine public",
+    "fichier": "morceaux/fantaisie-impromptu.mid"
+  },
+  {
+    "id": "prelude-en-do",
+    "titre": "Prélude en do majeur",
+    "compositeur": "Johann Sebastian Bach",
+    "oeuvre": "Le Clavier bien tempéré, BWV 846",
+    "annee": "1722",
+    "duree": 128.0,
+    "credit": "Gravure : Tobias Erbsland, Mutopia Project (domaine public). Interprétation : Alexandre Besnier.",
+    "licence": "Domaine public",
+    "fichier": "morceaux/prelude-en-do.mid"
+  }
+]

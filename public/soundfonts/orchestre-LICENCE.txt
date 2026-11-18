@@ -1,0 +1,10 @@
+orchestre-cordes.sf3, orchestre-cuivres.sf3, orchestre-bois.sf3
+
+Tirés de VSCO 2 Community Edition, par Versilian Studios (Sam Gossner et les contributeurs).
+Licence : CC0 1.0 (domaine public), https://creativecommons.org/publicdomain/zero/1.0/
+Source : https://github.com/sgossner/VSCO-2-CE
+
+Modifications faites pour song-audio (outils/banques/orchestre.py) : deux nuances gardées par
+note (la plus douce et la plus forte), une seule prise, hauteurs mesurées (octaves et quelques
+fichiers mal nommés corrigés), boucles en fondu enchaîné dans la partie tenue, niveaux
+égalisés note par note puis alignés sur GeneralUser GS, compression Ogg Vorbis (SoundFont 3).
