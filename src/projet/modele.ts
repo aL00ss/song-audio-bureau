@@ -1,8 +1,9 @@
 // Modèle du projet : canaux (instruments), patterns, playlist, pistes de mixage.
 // Fonctions pures : chaque modification renvoie un nouveau projet (immer).
 
+import { nomDuSon, type SourceCanal } from '../musique/synthes'
 import { produce } from 'immer'
-import { CANAL_BATTERIE, nomInstrument } from '../musique/gm'
+import { CANAL_BATTERIE } from '../musique/gm'
 import { SIGNATURE_DEFAUT, type Signature, ticsParMesure } from '../musique/temps'
 
 export const VERSION_PROJET = 1
@@ -36,6 +37,8 @@ export interface Canal {
   couleur: string
   /** Hauteur des pas du séquenceur : Do central, ou le son de batterie (36 grosse caisse…). */
   noteDefaut: number
+  /** Ce qui produit le son : la banque General MIDI, ou un synthé intégré (bureau). */
+  source: SourceCanal
 }
 
 export interface Pattern {
@@ -127,6 +130,7 @@ export function creerProjet(nom = 'Nouveau projet'): Projet {
 
 export interface OptionsCanal {
   nom?: string
+  source?: SourceCanal
   programme?: number
   batterie?: boolean
   volume?: number
@@ -144,7 +148,8 @@ export function ajouterCanal(projet: Projet, options: OptionsCanal = {}): { proj
   const batterie = options.batterie ?? false
   const suivant = produce(projet, (p) => {
     const index = p.mixage.length
-    const nom = options.nom ?? (batterie ? 'Batterie' : nomInstrument(programme))
+    const source = batterie ? 'soundfont' : (options.source ?? 'soundfont')
+    const nom = options.nom ?? (batterie ? 'Batterie' : nomDuSon({ source, programme }))
     p.mixage.push(creerPiste(index, nom))
     p.canaux.push({
       id,
@@ -158,6 +163,7 @@ export function ajouterCanal(projet: Projet, options: OptionsCanal = {}): { proj
       pisteMixage: index,
       couleur: COULEURS[p.canaux.length % COULEURS.length],
       noteDefaut: options.noteDefaut ?? (batterie ? NOTE_DEFAUT_BATTERIE : NOTE_DEFAUT_MELODIQUE),
+      source,
     })
   })
   return { projet: suivant, id }

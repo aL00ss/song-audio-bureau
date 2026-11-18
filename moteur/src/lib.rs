@@ -3,13 +3,17 @@
 
 pub mod effets;
 pub mod noyau;
+mod performance;
 pub mod rendu;
 pub mod sortie;
+pub mod source;
+pub mod soustractif;
 pub mod transport;
 
 pub use noyau::{CANAUX, Configuration, Evenement, Mesures, Message, Noyau, PISTES, ReglageCanal, ReglagePiste};
 pub use rustysynth::SoundFont;
 pub use sortie::Moteur;
+pub use source::{Source, TypeSource};
 pub use sortie::EtatLecture;
 pub use transport::{ActionTransport, EtatTransport, NoteSession, Session, SessionPreparee, Transport};
 

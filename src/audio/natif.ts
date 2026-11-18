@@ -2,7 +2,7 @@
 // du mixer et des événements datés sur l'horloge du moteur ; elle lit en retour l'horloge, les
 // crêtes des pistes et les voix des canaux, relevées toutes les MESURES_MS.
 
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { ticsEnSecondes } from '../musique/temps'
 import { longueurExport } from '../projet/exportMidi'
 import { attribuerCanauxMidi, patternActif, type Projet } from '../projet/modele'
@@ -15,7 +15,6 @@ import { type EtatTransport, evenementsDuMorceau, evenementsDuPattern, longueurD
 
 /** Canaux et pistes du moteur Rust. */
 export const CANAUX_NATIFS = 32
-const MESURES_MS = 40
 /** Secondes ajoutées après la fin, pour laisser les sons s'éteindre (comme l'export web). */
 export const QUEUE_EXPORT = 3
 
@@ -28,7 +27,7 @@ export interface EvenementNatif {
 }
 
 export interface ConfigurationNative {
-  canaux: { canal: number; programme: number; batterie: boolean; volume: number; pan: number; piste: number }[]
+  canaux: { canal: number; programme: number; batterie: boolean; volume: number; pan: number; piste: number; source: string }[]
   pistes: { index: number; volume: number; pan: number; audible: boolean; eq: [number, number, number]; reverb: number }[]
 }
 
@@ -40,7 +39,15 @@ export function configurationNative(projet: Projet): ConfigurationNative {
   for (const canal of projet.canaux) {
     const midi = attribution.get(canal.id)
     if (midi === undefined || midi >= CANAUX_NATIFS) continue
-    canaux.push({ canal: midi, programme: canal.programme, batterie: canal.batterie, volume: canal.volume, pan: canal.pan, piste: routage.get(midi) ?? 0 })
+    canaux.push({
+      canal: midi,
+      programme: canal.programme,
+      batterie: canal.batterie,
+      volume: canal.volume,
+      pan: canal.pan,
+      piste: routage.get(midi) ?? 0,
+      source: canal.batterie ? 'soundfont' : canal.source,
+    })
   }
   const audibles = pistesAudibles(projet.mixage)
   const pistes = projet.mixage.map((p) => ({
@@ -137,22 +144,20 @@ export class MoteurNatif implements MoteurAudio {
   static async creer(): Promise<MoteurNatif> {
     const infos = await invoke<{ frequence: number; sortie: string | null }>('moteur_demarrer')
     const moteur = new MoteurNatif(infos.frequence, infos.sortie)
-    await moteur.#mesurer()
-    setInterval(() => void moteur.#mesurer(), MESURES_MS)
+    moteur.#recevoir(await invoke<Mesures>('moteur_mesures'))
+    // ensuite, le moteur pousse ses mesures à la cadence de l'affichage
+    const canal = new Channel<Mesures>()
+    canal.onmessage = (mesures) => moteur.#recevoir(mesures)
+    await invoke('moteur_abonner', { canal })
     return moteur
   }
 
-  async #mesurer(): Promise<void> {
-    try {
-      const mesures = await invoke<Mesures>('moteur_mesures')
-      // les crêtes sont celles accumulées depuis le relevé précédent
-      this.#mesures = mesures
-      for (const ecouteur of this.#surMesures) ecouteur(mesures.lecture)
-      const decalage = mesures.horloge / this.#frequence - performance.now() / 1000
-      this.#decalage = this.#decalage === null ? decalage : this.#decalage + (decalage - this.#decalage) * 0.1
-    } catch (erreur) {
-      console.warn('Mesures du moteur indisponibles :', erreur)
-    }
+  #recevoir(mesures: Mesures): void {
+    // les crêtes sont celles accumulées depuis l'envoi précédent
+    this.#mesures = mesures
+    for (const ecouteur of this.#surMesures) ecouteur(mesures.lecture)
+    const decalage = mesures.horloge / this.#frequence - performance.now() / 1000
+    this.#decalage = this.#decalage === null ? decalage : this.#decalage + (decalage - this.#decalage) * 0.1
   }
 
   get frequence(): number {

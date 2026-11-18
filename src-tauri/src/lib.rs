@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use moteur::{
     ActionTransport, CANAUX, Configuration, EtatTransport, Evenement, Message, Moteur, NoteSession, PISTES, ReglageCanal, ReglagePiste,
-    Session, SoundFont,
+    Session, SoundFont, TypeSource,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State, ipc::Response, path::BaseDirectory};
@@ -36,6 +36,9 @@ struct CanalIpc {
     volume: f32,
     pan: f32,
     piste: u8,
+    /// « soundfont » (par défaut) ou « soustractif ».
+    #[serde(default)]
+    source: String,
 }
 
 #[derive(Deserialize)]
@@ -66,6 +69,7 @@ impl ConfigurationIpc {
                     volume: canal.volume,
                     pan: canal.pan,
                     piste: canal.piste,
+                    source: if canal.source == "soustractif" { TypeSource::Soustractif } else { TypeSource::SoundFont },
                 };
             }
         }
@@ -120,7 +124,7 @@ enum ActionIpc {
     Metronome { actif: bool },
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct LectureIpc {
     etat: &'static str,
     position: f64,
@@ -139,7 +143,7 @@ struct InfosMoteur {
     pistes: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct MesuresIpc {
     /// Échantillons rendus (horloge du moteur) au moment des mesures.
     horloge: u64,
@@ -193,7 +197,37 @@ fn moteur_configurer(etat: State<EtatMoteur>, configuration: ConfigurationIpc) -
 
 #[tauri::command]
 fn moteur_mesures(etat: State<EtatMoteur>) -> Result<MesuresIpc, String> {
-    avec_moteur(&etat, |m| {
+    avec_moteur(&etat, mesurer)
+}
+
+/// Cadence à laquelle le moteur pousse ses mesures vers l'interface (60 par seconde).
+const CADENCE_MESURES: std::time::Duration = std::time::Duration::from_millis(16);
+
+/// L'interface s'abonne : le moteur lui pousse ses mesures (horloge, crêtes, voix, transport)
+/// à la cadence de l'affichage, au lieu d'être interrogé. L'envoi s'arrête quand l'interface
+/// ne reçoit plus (fenêtre fermée, rechargée).
+#[tauri::command]
+fn moteur_abonner(app: tauri::AppHandle, canal: tauri::ipc::Channel<MesuresIpc>) {
+    std::thread::Builder::new()
+        .name("song-audio-mesures".into())
+        .spawn(move || {
+            loop {
+                let etat = app.state::<EtatMoteur>();
+                let mesures = match avec_moteur(&etat, mesurer) {
+                    Ok(m) => m,
+                    Err(_) => break,
+                };
+                if canal.send(mesures).is_err() {
+                    break;
+                }
+                std::thread::sleep(CADENCE_MESURES);
+            }
+        })
+        .expect("fil des mesures");
+}
+
+fn mesurer(m: &mut Moteur) -> MesuresIpc {
+    {
         let mesures = m.mesures();
         let l = m.lecture();
         let etat = match l.etat {
@@ -203,7 +237,7 @@ fn moteur_mesures(etat: State<EtatMoteur>) -> Result<MesuresIpc, String> {
         };
         let lecture = LectureIpc { etat, position: l.position, position_absolue: l.position_absolue, horloge: l.horloge, tempo: l.tempo, longueur: l.longueur };
         MesuresIpc { horloge: m.horloge(), cretes: mesures.cretes, voix: mesures.voix, lecture }
-    })
+    }
 }
 
 #[tauri::command]
@@ -292,6 +326,7 @@ pub fn lancer() {
             moteur_tout_couper,
             moteur_configurer,
             moteur_mesures,
+            moteur_abonner,
             moteur_session,
             moteur_transport,
             moteur_rendre_wav,

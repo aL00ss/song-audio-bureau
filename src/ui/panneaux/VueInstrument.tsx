@@ -3,10 +3,11 @@
 // comme une batterie pour les canaux de batterie. Les vues dédiées (manche, cordes, vents)
 // arrivent à l'étape 7.
 
+import { nomDuSon } from '../../musique/synthes'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { audio, notesEnDirect, useStudio } from '../../etat/studio'
 import { caractere, disposition, etiquettes, HAUTEUR_NOIRE, nombreDeBlanches, toucheSous } from '../../musique/clavier'
-import { familleInstrument, nomInstrument, nomNote, nomSonBatterie, vueInstrument } from '../../musique/gm'
+import { familleInstrument, nomNote, nomSonBatterie, vueInstrument } from '../../musique/gm'
 import { type Canal, notesAuTic, patternActif } from '../../projet/modele'
 import { useImage } from '../commun/useImage'
 import { accordagePour } from '../../musique/manche'
@@ -70,7 +71,7 @@ function Clavier({ canal }: { canal: Canal }) {
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-black/50 px-2 py-1 text-discret">
         <span>
-          <span className="font-semibold" style={{ color: canal.couleur }}>{canal.nom}</span> · {nomInstrument(canal.programme)} ({familleInstrument(canal.programme)})
+          <span className="font-semibold" style={{ color: canal.couleur }}>{canal.nom}</span> · {nomDuSon(canal)} ({canal.source === 'soustractif' ? 'synthé intégré' : familleInstrument(canal.programme)})
         </span>
         <span>
           Clavier{' '}

@@ -76,6 +76,8 @@ function lireCanal(v: unknown, chemin: string): Canal {
     couleur: texte(o.couleur, `${chemin}.couleur`),
     // absent des projets enregistrés avant le séquenceur pas à pas
     noteDefaut: o.noteDefaut === undefined ? (o.batterie === true ? 36 : 60) : entier(o.noteDefaut, `${chemin}.noteDefaut`, 0, 127),
+    // absent des projets d'avant les synthés intégrés
+    source: o.source === 'soustractif' && o.batterie !== true ? 'soustractif' : 'soundfont',
   }
 }
 

@@ -2,15 +2,15 @@
 //! il sert aussi bien au rendu en direct (appelé par le fil audio) qu'au rendu hors ligne
 //! (export WAV, tests).
 //!
-//! Un synthétiseur par canal : rustysynth ne joue la batterie que sur son canal 10, alors que
-//! chaque batterie du projet a son propre canal. Chaque canal a donc sa sortie séparée, qui
-//! alimente la piste de mixage où il est routé.
+//! Graphe audio : chaque canal joue une *source* (lecteur SoundFont, synthétiseur intégré, et
+//! demain greffons), a sa sortie séparée, qui alimente la piste de mixage où il est routé.
 
 use std::sync::Arc;
 
-use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
+use rustysynth::SoundFont;
 
 use crate::effets::{gain_du_fader, panoramique, Biquad, Limiteur, Reverb, TypeFiltre};
+use crate::source::{sources_integrees, Source, TypeSource, TYPES_SOURCES};
 
 /// Canaux disponibles (comme la version web).
 pub const CANAUX: usize = 32;
@@ -21,12 +21,6 @@ pub const BLOC_MAX: usize = 1024;
 /// Événements en attente au plus (au-delà, les plus lointains sont ignorés).
 const FILE_MAX: usize = 16384;
 
-const CANAL_MELODIQUE: i32 = 0;
-const CANAL_BATTERIE: i32 = 9;
-const NOTE_ON: i32 = 0x90;
-const NOTE_OFF: i32 = 0x80;
-const CONTROLE: i32 = 0xB0;
-const PROGRAMME: i32 = 0xC0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Message {
@@ -53,11 +47,13 @@ pub struct ReglageCanal {
     pub pan: f32,
     /// Piste de mixage qui reçoit ce canal.
     pub piste: u8,
+    /// Ce qui produit le son du canal.
+    pub source: TypeSource,
 }
 
 impl Default for ReglageCanal {
     fn default() -> Self {
-        ReglageCanal { actif: false, programme: 0, batterie: false, volume: 0.8, pan: 0.0, piste: 0 }
+        ReglageCanal { actif: false, programme: 0, batterie: false, volume: 0.8, pan: 0.0, piste: 0, source: TypeSource::SoundFont }
     }
 }
 
@@ -104,35 +100,32 @@ pub struct Mesures {
 }
 
 struct Canal {
-    synth: Synthesizer,
+    /// Une source de chaque type intégré ; seule celle du réglage joue.
+    sources: [Box<dyn Source>; TYPES_SOURCES],
     reglage: ReglageCanal,
     gauche: Vec<f32>,
     droite: Vec<f32>,
-    /// Notes tenues (pour compter les voix sans accès à celles du synthétiseur).
-    tenues: [bool; 128],
     /// Le canal a produit du son dans le dernier bloc.
     sonne: bool,
 }
 
 impl Canal {
-    fn canal_midi(&self) -> i32 {
-        if self.reglage.batterie { CANAL_BATTERIE } else { CANAL_MELODIQUE }
+    fn source(&mut self) -> &mut dyn Source {
+        self.sources[self.reglage.source.index()].as_mut()
     }
 
     fn appliquer(&mut self, reglage: ReglageCanal) {
-        let ancien = self.reglage;
+        if reglage.source != self.reglage.source {
+            // l'ancienne source se tait
+            self.source().tout_couper();
+        }
         self.reglage = reglage;
-        if ancien.batterie != reglage.batterie {
-            let midi = if ancien.batterie { CANAL_BATTERIE } else { CANAL_MELODIQUE };
-            self.synth.note_off_all_channel(midi, true);
-            self.tenues = [false; 128];
-        }
-        let midi = self.canal_midi();
-        if !reglage.batterie && (ancien.programme != reglage.programme || ancien.batterie || !ancien.actif) {
-            self.synth.process_midi_message(midi, PROGRAMME, reglage.programme as i32, 0);
-        }
-        self.synth.process_midi_message(midi, CONTROLE, 7, (reglage.volume.clamp(0.0, 1.0) * 127.0).round() as i32);
-        self.synth.process_midi_message(midi, CONTROLE, 10, (((reglage.pan.clamp(-1.0, 1.0) + 1.0) / 2.0) * 127.0).round() as i32);
+        self.source().regler(reglage.programme, reglage.batterie, reglage.volume, reglage.pan);
+    }
+
+    fn voix(&self) -> u32 {
+        let voix = self.sources[self.reglage.source.index()].voix();
+        if voix > 0 { voix } else { u32::from(self.sonne) }
     }
 }
 
@@ -165,20 +158,13 @@ const CLIC_NIVEAU: f32 = 0.35;
 
 impl Noyau {
     pub fn new(banque: &Arc<SoundFont>, frequence: u32) -> Result<Self, String> {
-        let mut reglages = SynthesizerSettings::new(frequence as i32);
-        reglages.enable_reverb_and_chorus = false; // la réverbération est celle du mixer
-        reglages.maximum_polyphony = 64;
-        // blocs internes de 32 échantillons (0,7 ms) : un événement attend au plus un bloc
-        reglages.block_size = 32;
         let mut canaux = Vec::with_capacity(CANAUX);
         for _ in 0..CANAUX {
-            let synth = Synthesizer::new(banque, &reglages).map_err(|e| format!("synthétiseur : {e:?}"))?;
             canaux.push(Canal {
-                synth,
+                sources: sources_integrees(banque, frequence)?,
                 reglage: ReglageCanal::default(),
                 gauche: vec![0.0; BLOC_MAX],
                 droite: vec![0.0; BLOC_MAX],
-                tenues: [false; 128],
                 sonne: false,
             });
         }
@@ -262,23 +248,17 @@ impl Noyau {
         self.file.clear();
         self.clics.clear();
         for canal in self.canaux.iter_mut() {
-            canal.synth.note_off_all(true);
-            canal.tenues = [false; 128];
+            for source in canal.sources.iter_mut() {
+                source.tout_couper();
+            }
         }
     }
 
     fn executer(&mut self, evenement: Evenement) {
-        let canal = &mut self.canaux[evenement.canal as usize];
-        let midi = canal.canal_midi();
+        let source = self.canaux[evenement.canal as usize].source();
         match evenement.message {
-            Message::NoteOn { hauteur, velocite } => {
-                canal.synth.process_midi_message(midi, NOTE_ON, hauteur as i32, velocite as i32);
-                canal.tenues[hauteur as usize & 127] = true;
-            }
-            Message::NoteOff { hauteur } => {
-                canal.synth.process_midi_message(midi, NOTE_OFF, hauteur as i32, 0);
-                canal.tenues[hauteur as usize & 127] = false;
-            }
+            Message::NoteOn { hauteur, velocite } => source.note_on(hauteur, velocite),
+            Message::NoteOff { hauteur } => source.note_off(hauteur),
         }
     }
 
@@ -316,7 +296,8 @@ impl Noyau {
             if !canal.reglage.actif {
                 continue;
             }
-            canal.synth.render(&mut canal.gauche[..n], &mut canal.droite[..n]);
+            let index_source = canal.reglage.source.index();
+            canal.sources[index_source].rendre(&mut canal.gauche[..n], &mut canal.droite[..n]);
             let mut crete = 0f32;
             let index = canal.reglage.piste as usize;
             let piste = &mut self.pistes[if index < PISTES && index > 0 { index } else { 0 }];
@@ -402,8 +383,7 @@ impl Noyau {
             piste.crete = [0.0; 2];
         }
         for (canal, voix) in self.canaux.iter().zip(mesures.voix.iter_mut()) {
-            let tenues = canal.tenues.iter().filter(|&&t| t).count() as u32;
-            *voix = if tenues > 0 { tenues } else { u32::from(canal.sonne) };
+            *voix = canal.voix();
         }
     }
 
@@ -416,8 +396,7 @@ impl Noyau {
         }
         mesures.voix.clear();
         for canal in self.canaux.iter() {
-            let tenues = canal.tenues.iter().filter(|&&t| t).count() as u32;
-            mesures.voix.push(if tenues > 0 { tenues } else { u32::from(canal.sonne) });
+            mesures.voix.push(canal.voix());
         }
     }
 }
@@ -443,7 +422,7 @@ pub mod tests {
     /// Un canal (piano par défaut) routé sur la piste 1.
     pub fn configuration(programme: u8, batterie: bool) -> Configuration {
         let mut c = Configuration::default();
-        c.canaux[0] = ReglageCanal { actif: true, programme, batterie, volume: 0.8, pan: 0.0, piste: 1 };
+        c.canaux[0] = ReglageCanal { actif: true, programme, batterie, volume: 0.8, pan: 0.0, piste: 1, source: TypeSource::SoundFont };
         c.pistes[1] = ReglagePiste { existe: true, ..Default::default() };
         c
     }

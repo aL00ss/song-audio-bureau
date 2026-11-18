@@ -3,9 +3,10 @@
 // tiennent pas sur des pas (morceau importé). Sous les lignes, la vélocité de chaque pas du
 // canal sélectionné.
 
+import { nomDuSon } from '../../musique/synthes'
 import { useEffect, useRef } from 'react'
 import { audio, useStudio } from '../../etat/studio'
-import { nomInstrument, nomSonBatterie } from '../../musique/gm'
+import { nomSonBatterie } from '../../musique/gm'
 import { TICS_PAR_PAS } from '../../musique/temps'
 import { attribuerCanauxMidi, type Canal, type NoteMusicale, patternActif } from '../../projet/modele'
 import { estEnModePas, nombreDePas, PAS_MAX, velocitesDesPas } from '../../projet/pas'
@@ -156,7 +157,7 @@ function Ligne({ canal, voix, selectionne, pasCourant }: { canal: Canal; voix: n
           type="button"
           data-testid="nom-canal"
           onClick={() => selectionnerCanal(canal.id)}
-          title={canal.batterie ? `Batterie : ${nomSonBatterie(canal.noteDefaut)}` : nomInstrument(canal.programme)}
+          title={canal.batterie ? `Batterie : ${nomSonBatterie(canal.noteDefaut)}` : nomDuSon(canal)}
           aria-pressed={selectionne}
           className="h-6 w-32 shrink-0 truncate rounded border border-black/50 bg-gradient-to-b from-[#4a525d] to-[#3b424b] px-2 text-left font-semibold aria-pressed:border-accent/70"
           style={{ color: canal.couleur }}

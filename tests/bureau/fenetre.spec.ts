@@ -134,3 +134,21 @@ test('fichier de projet : Ctrl+S écrit sur le disque, relecture identique, seul
   expect(refus).toContain("n'est pas un fichier de projet")
   rmSync(chemin)
 })
+
+test('synthé intégré (moteur Rust) : il apparaît dans le navigateur et sonne', async () => {
+  await page.evaluate(() => (window as any).__studio.etat().nouveauDepuisModele('vide'))
+  await expect(page.getByTestId('synthes-integres')).toBeVisible()
+  await page.getByTestId('synthes-integres').getByRole('button', { name: '＋ Lead acide' }).click()
+  const r = await page.evaluate(async () => {
+    const s = (window as any).__studio
+    const e = s.etat()
+    const canal = e.projet.canaux.at(-1)
+    e.jouerNote(57, 110, canal.id)
+    await new Promise((f) => setTimeout(f, 400))
+    const voix = s.audio.moteur.voix(s.canalMidi(canal.id))
+    e.relacherNote(57, canal.id)
+    return { source: canal.source, nom: canal.nom, voix }
+  })
+  expect(r).toMatchObject({ source: 'soustractif', nom: 'Lead acide' })
+  expect(r.voix).toBeGreaterThan(0)
+})

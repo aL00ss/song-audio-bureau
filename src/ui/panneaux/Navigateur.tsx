@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStudio } from '../../etat/studio'
 import { LISTE_INSTRUMENTS } from '../../musique/gm'
+import { PREREGLAGES_SOUSTRACTIF } from '../../musique/synthes'
 import { chercherBitMidi, formaterEcoutes, type ResultatRecherche } from '../../projet/recherche'
 
 const FAMILLES = [...new Set(LISTE_INSTRUMENTS.map((i) => i.famille))]
@@ -180,13 +181,32 @@ function ImportFichier() {
 }
 
 function Instruments() {
-  const { ajouterInstrument } = useStudio()
+  const { ajouterInstrument, ajouterSynthe, synthesIntegres } = useStudio()
   return (
     <section aria-label="Instruments" className="min-h-0">
       <h3 className={titreSection}>Instruments</h3>
       <button type="button" onClick={() => ajouterInstrument(0, true)} title="Ajouter une ligne de batterie (un son, en pas à pas)" className={ligne}>
         ＋ Batterie
       </button>
+      {synthesIntegres && (
+        <details open data-testid="synthes-integres">
+          <summary className="cursor-pointer select-none rounded px-1 py-0.5 text-accent hover:bg-panneau-2">Synthés intégrés</summary>
+          <ul className="ml-3 border-l border-bord pl-1">
+            {PREREGLAGES_SOUSTRACTIF.map((p, i) => (
+              <li key={p.nom}>
+                <button
+                  type="button"
+                  onClick={() => ajouterSynthe(i)}
+                  title={`Ajouter le synthé soustractif : ${p.nom}`}
+                  className="w-full truncate rounded px-1 py-px text-left hover:bg-panneau-2"
+                >
+                  ＋ {p.nom}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {FAMILLES.map((famille) => (
         <details key={famille}>
           <summary className="cursor-pointer select-none rounded px-1 py-0.5 hover:bg-panneau-2">{famille}</summary>

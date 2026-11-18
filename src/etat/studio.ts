@@ -57,6 +57,10 @@ interface EtatStudio {
   modifierCanal(id: string, modifications: Partial<Omit<Canal, 'id'>>): void
   selectionnerCanal(id: string): void
   ajouterInstrument(programme: number, batterie?: boolean): void
+  /** Ajoute un canal joué par le synthé intégré (préréglage), sur le bureau. */
+  ajouterSynthe(prereglage: number): void
+  /** Le moteur sait jouer les synthés intégrés (application de bureau). */
+  synthesIntegres: boolean
   changerVolumeMaitre(volume: number): void
   nouveauProjet(): void
   /** Active, désactive (actif donné) ou bascule un pas du séquenceur. */
@@ -285,7 +289,7 @@ export const useStudio = create<EtatStudio>()((set, get) => {
               })
           transport = moteur instanceof MoteurNatif ? new TransportNatif(moteur) : new Transport(moteur, moteur)
           transport.surEtat((etat) => set({ transport: etat }))
-          set({ metronomeDisponible: transport.metronomeDisponible })
+          set({ metronomeDisponible: transport.metronomeDisponible, synthesIntegres: moteur instanceof MoteurNatif })
           await restauration
           synchroniser(get().projet)
           sauvegarderAutomatiquement()
@@ -430,6 +434,18 @@ export const useStudio = create<EtatStudio>()((set, get) => {
 
     selectionnerCanal(id) {
       if (get().projet.canaux.some((c) => c.id === id)) set({ canalSelectionne: id })
+    },
+
+    synthesIntegres: false,
+    ajouterSynthe(prereglage) {
+      try {
+        const { projet, id } = ajouterCanal(get().projet, { programme: prereglage, source: 'soustractif' })
+        attribuerCanauxMidi(projet.canaux)
+        set({ projet, canalSelectionne: id, message: null })
+        synchroniser(projet)
+      } catch (erreur) {
+        set({ message: erreur instanceof Error ? erreur.message : String(erreur) })
+      }
     },
 
     ajouterInstrument(programme, batterie = false) {

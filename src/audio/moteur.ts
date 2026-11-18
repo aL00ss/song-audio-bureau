@@ -3,6 +3,7 @@
 
 import { WorkletSynthesizer } from 'spessasynth_lib'
 import urlProcesseur from 'spessasynth_lib/dist/spessasynth_processor.min.js?url'
+import { programmeGM } from '../musique/synthes'
 import { attribuerCanauxMidi, type Projet } from '../projet/modele'
 import type { MoteurAudio } from './interface'
 import { routageMixer } from './routage'
@@ -142,7 +143,8 @@ export class MoteurSon implements MoteurAudio {
       // qu'elle ne saurait pas placer ; il sera réglé à l'événement channelAdded.
       if (midi === undefined || midi >= this.synth.midiChannels.length) continue
       this.synth.midiChannels[midi].setDrums(canal.batterie)
-      if (!canal.batterie) this.synth.programChange(midi, canal.programme)
+      // un synthé intégré (bureau) est remplacé ici par l'instrument General MIDI le plus proche
+      if (!canal.batterie) this.synth.programChange(midi, programmeGM(canal))
       this.synth.controllerChange(midi, CC_VOLUME, Math.round(canal.volume * 127))
       this.synth.controllerChange(midi, CC_PAN, Math.round(((canal.pan + 1) / 2) * 127))
       this.synth.controllerChange(midi, CC_REVERB, 0)
