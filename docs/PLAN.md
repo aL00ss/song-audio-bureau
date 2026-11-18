@@ -6,6 +6,8 @@ Version de bureau du studio [song-audio](https://github.com/aL00ss/song-audio). 
 propre forme. Rien n'est copié : ni nom, ni logo, ni habillage, ni contenu d'usine ; les panneaux
 portent des noms français à nous.
 
+Le but final, fonction par fonction : [FONCTIONS-CIBLES.md](FONCTIONS-CIBLES.md).
+
 ## Principes
 
 - **Le moteur Rust est le chef d'orchestre** : transport à l'échantillon près, graphe audio
