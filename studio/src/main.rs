@@ -20,6 +20,10 @@ fn main() -> eframe::Result {
             studio::app::appliquer_theme(&cc.egui_ctx);
             let mut studio = Studio::depuis_disque();
             studio.reprendre_disposition(cc.storage);
+            // un fichier donné en argument (ouvrir avec…) : projet ou MIDI
+            if let Some(chemin) = std::env::args_os().nth(1) {
+                studio.ouvrir_fichier(std::path::Path::new(&chemin));
+            }
             Ok(Box::new(studio))
         }),
     )

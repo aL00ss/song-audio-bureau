@@ -1,6 +1,7 @@
 //! Modèle du projet de song-audio (version de bureau) : pur, sans son ni interface, testé.
 //! Les fichiers ont le même format JSON que la version web.
 
+pub mod canaux;
 pub mod demo;
 pub mod gm;
 pub mod import_midi;

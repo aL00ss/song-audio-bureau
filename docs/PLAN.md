@@ -134,6 +134,25 @@ passent par egui_kittest.
   1 test sur le vrai BitMidi (lancé à la main avec RESEAU=1 : réussi). Reportés à la phase N :
   écoute avant d'ajouter (avec les échantillons), favoris et étiquettes, contenu du projet,
   glisser du navigateur vers le rack.
+- [x] **N3 — Séquenceur pas à pas** : logique reprise de la version web avec tous ses tests
+  (pas.test.ts traduit) ; grille par canal avec un écart à chaque temps, clic pour basculer,
+  glisser pour peindre (l'état voulu est l'inverse du premier pas, la peinture reste sur sa
+  ligne), clic droit glissé pour effacer, Entrée sur un pas qui a le focus ; opacité selon la
+  vélocité ; tête de lecture ; longueur du pattern (1 à 512 pas) ; swing ; liste des sons de
+  batterie (35 à 81) pour un canal de batterie en pas, ses pas suivent le nouveau son ;
+  panoramique et piste de mixage par canal ; aperçu des notes pour un canal aux notes libres ;
+  éditeur de vélocité du canal choisi, aligné sur la grille et qui suit son défilement.
+  Au-delà de la version web : menu de chaque canal (clic droit sur le nom) pour renommer (ou
+  double clic ; Entrée valide, Échap annule), changer de couleur (16 teintes), remplacer le
+  son (instrument General MIDI ou synthé intégré ; un nom automatique suit le son, un nom
+  choisi est gardé), cloner (réglages, notes de tous les patterns, piste de mixage copiée,
+  nom « Nom 2 »), monter, descendre, supprimer (ses notes partent avec lui, la sélection passe
+  au voisin) ; le moteur coupe ce qui sonne quand l'ordre des canaux change (une note tenue ne
+  reste pas sur un rang qui n'est plus le sien). Colonnes de largeur fixe : les grilles restent
+  alignées quels que soient les noms. Un fichier donné en argument à l'exécutable est ouvert
+  (projet ou MIDI). 9 tests `pas`, 5 tests `canaux`, 10 tests d'interface du séquenceur
+  (peinture et effacement simulés au pointeur, double clic, menus, suppression pendant la
+  lecture avec le vrai moteur).
 
 ## Phases
 

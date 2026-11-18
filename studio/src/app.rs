@@ -5,13 +5,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, RichText, Sense, Stroke, Vec2};
+use eframe::egui::{self, Color32, RichText, Vec2};
 use moteur::transport::TICS_PAR_NOIRE;
 use moteur::{ActionTransport, EtatTransport, Moteur, SoundFont};
-use projet::gm::{FAMILLES, famille_instrument, nom_instrument, nom_son_batterie};
+use projet::gm::{FAMILLES, famille_instrument, nom_instrument};
 use projet::lecture::ModeLecture;
 use projet::modele::OptionsCanal;
-use projet::pas::{definir_pas, velocites_des_pas};
 use projet::serialisation::{deserialiser, serialiser};
 use projet::synthes::PREREGLAGES_SOUSTRACTIF;
 use projet::temps::{formater_position, formater_secondes, tics_en_secondes};
@@ -67,6 +66,12 @@ pub struct Studio {
     /// Disposition des panneaux (sortie le temps de dessiner les onglets).
     pub dock: Option<DockState<Panneau>>,
     pub navigateur: Navigateur,
+    /// Peinture des pas en cours (bouton tenu).
+    pub peinture: Option<crate::rack::Peinture>,
+    /// Abscisses des colonnes de pas à l'écran (image courante), pour aligner les vélocités.
+    pub(crate) colonnes_pas: Vec<egui::Rangef>,
+    /// Canal en cours de renommage, et le texte saisi.
+    pub renommage: Option<(String, String)>,
 }
 
 impl Studio {
@@ -99,6 +104,9 @@ impl Studio {
             envoye: None,
             dock: Some(coquille::disposition_par_defaut()),
             navigateur: Navigateur::new(reseau, catalogue_des_morceaux()),
+            peinture: None,
+            colonnes_pas: Vec::new(),
+            renommage: None,
         }
     }
 
@@ -253,7 +261,13 @@ impl Studio {
         if a_jour {
             return;
         }
+        // canaux supprimés ou déplacés : leurs rangs dans le moteur changent, on coupe ce qui
+        // sonne (une note tenue resterait sur un rang qui n'est plus le sien)
+        let ordre_change = self.envoye.as_ref().is_some_and(|(p, _)| p.canaux.len() > self.projet.canaux.len() || !self.projet.canaux.iter().zip(&p.canaux).all(|(a, b)| a.id == b.id));
         if let Some(m) = &mut self.moteur {
+            if ordre_change {
+                m.tout_couper();
+            }
             if let Err(e) = m.configurer(pont::configuration(&self.projet)) {
                 self.message = Some(format!("Le moteur n'a pas pu ajouter d'instrument : {e}"));
             }
@@ -567,80 +581,6 @@ impl Studio {
             });
         }
     }
-
-    pub fn rack(&mut self, ui: &mut egui::Ui) {
-        let pattern = self.projet.pattern_actif().clone();
-        let pas_courant = (self.etat_transport() == EtatTransport::Lecture).then(|| (self.position() / 24.0) as usize);
-        let voix: Vec<u32> = self.moteur.as_ref().map(|m| m.mesures().voix).unwrap_or_default();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(&pattern.nom).strong());
-            ui.label(RichText::new(format!("{} instruments", self.projet.canaux.len())).color(theme::DISCRET));
-        });
-        ui.separator();
-        let canaux = self.projet.canaux.clone();
-        // liste virtualisée : seules les lignes visibles sont dessinées (des centaines de canaux)
-        let hauteur_ligne = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
-        egui::ScrollArea::both().auto_shrink([false, false]).show_rows(ui, hauteur_ligne, canaux.len(), |ui, lignes| {
-            for rang in lignes {
-                let canal = &canaux[rang];
-                ui.horizontal(|ui| {
-                    // témoin d'activité : le canal du moteur est le rang du canal dans le projet
-                    let actif = voix.get(rang).copied().unwrap_or(0) > 0;
-                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
-                    ui.painter().circle_filled(rect.center(), 4.0, if actif { theme::ACTIF } else { theme::BORD });
-                    let mut muet = canal.muet;
-                    if ui.toggle_value(&mut muet, "M").on_hover_text(format!("Muet : {}", canal.nom)).changed() {
-                        let id = canal.id.clone();
-                        self.modifier(|p| p.canal_mut(&id).iter_mut().for_each(|c| c.muet = muet));
-                    }
-                    let mut solo = canal.solo;
-                    if ui.toggle_value(&mut solo, "S").on_hover_text(format!("Solo : {}", canal.nom)).changed() {
-                        let id = canal.id.clone();
-                        self.modifier(|p| p.canal_mut(&id).iter_mut().for_each(|c| c.solo = solo));
-                    }
-                    let mut volume = canal.volume;
-                    if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).on_hover_text(format!("Volume : {}", canal.nom)).changed() {
-                        let id = canal.id.clone();
-                        self.modifier(|p| p.canal_mut(&id).iter_mut().for_each(|c| c.volume = volume));
-                    }
-                    let selectionne = self.canal_selectionne.as_deref() == Some(canal.id.as_str());
-                    let titre = if canal.batterie { format!("Batterie : {}", nom_son_batterie(canal.note_defaut)) } else { famille_ou_synthe(canal) };
-                    let nom = egui::Button::new(RichText::new(&canal.nom).color(couleur(&canal.couleur)))
-                        .min_size(Vec2::new(150.0, 20.0))
-                        .selected(selectionne);
-                    if ui.add(nom).on_hover_text(titre).clicked() {
-                        self.canal_selectionne = Some(canal.id.clone());
-                    }
-                    // pas du séquenceur
-                    let pas = velocites_des_pas(&pattern, &canal.id, canal.note_defaut);
-                    for (i, &v) in pas.iter().enumerate() {
-                        let taille = Vec2::new(16.0, 20.0);
-                        let (rect, reponse) = ui.allocate_exact_size(taille, Sense::click());
-                        let groupe_sombre = (i / 4) % 2 == 1;
-                        let fond = if v > 0 {
-                            couleur(&canal.couleur)
-                        } else if groupe_sombre {
-                            theme::PANNEAU_2
-                        } else {
-                            theme::FOND
-                        };
-                        ui.painter().rect_filled(rect.shrink(1.0), 2.0, fond);
-                        if pas_courant.map(|p| p % pas.len()) == Some(i) {
-                            ui.painter().rect_stroke(rect.shrink(1.0), 2.0, Stroke::new(1.5, Color32::WHITE), egui::StrokeKind::Inside);
-                        }
-                        if reponse.clicked() {
-                            let id = canal.id.clone();
-                            self.modifier(|p| definir_pas(p, &id, i as u32, None));
-                        }
-                        if reponse.secondary_clicked() {
-                            let id = canal.id.clone();
-                            self.modifier(|p| definir_pas(p, &id, i as u32, Some(false)));
-                        }
-                    }
-                });
-            }
-        });
-    }
 }
 
 fn projet_vide() -> Projet {
@@ -653,14 +593,14 @@ fn projet_vide() -> Projet {
     p
 }
 
-fn famille_ou_synthe(canal: &projet::Canal) -> String {
+pub(crate) fn famille_ou_synthe(canal: &projet::Canal) -> String {
     match canal.source {
         SourceCanal::Soustractif => "Synthé intégré".into(),
         SourceCanal::Soundfont => format!("{} ({})", nom_instrument(canal.programme), famille_instrument(canal.programme)),
     }
 }
 
-fn couleur(hex: &str) -> Color32 {
+pub(crate) fn couleur(hex: &str) -> Color32 {
     let h = hex.trim_start_matches('#');
     let octet = |i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or("80"), 16).unwrap_or(128);
     Color32::from_rgb(octet(0), octet(2), octet(4))

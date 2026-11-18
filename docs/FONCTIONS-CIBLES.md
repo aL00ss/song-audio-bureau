@@ -112,17 +112,17 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Fonction | Référence FL Studio | Chez song-audio | État | Phase |
 |---|---|---|---|---|
 | Liste des canaux, sans limite | Channel Rack (plafonné) | Rack d'instruments, illimité, virtualisé | ✅ | N0, ⟂ |
-| Séquenceur pas à pas | Step sequencer | Pas cliquables | ✅ (clic, clic droit) | N3 |
-| Peindre au glisser, effacer | Paint steps | Peinture et effacement au glisser | 🌐 | N3 |
-| Longueur du pattern, pas par mesure | Pattern length | Longueur réglable (1 à 512 pas) | 🌐 | N3 |
-| Paramètres par pas : vélocité, relâchement, hauteur fine, panoramique, modulations X/Y, décalage | Graph editor | Éditeur graphique des pas | 🟡 (vélocité, web) | E |
-| Swing global et par canal | Swing, channel swing | Swing | 🌐 (global) | N3, E |
-| Muet, solo, volume, panoramique par canal | Mute, solo, knobs | Muet, solo, volume ; panoramique | 🟡 | N3 |
+| Séquenceur pas à pas | Step sequencer | Pas cliquables, clavier, tête de lecture | ✅ | N3 |
+| Peindre au glisser, effacer | Paint steps | Peinture et effacement au glisser | ✅ | N3 |
+| Longueur du pattern, pas par mesure | Pattern length | Longueur réglable (1 à 512 pas) | ✅ | N3 |
+| Paramètres par pas : vélocité, relâchement, hauteur fine, panoramique, modulations X/Y, décalage | Graph editor | Éditeur graphique des pas | 🟡 (vélocité) | E |
+| Swing global et par canal | Swing, channel swing | Swing | 🟡 (global) | N3, E |
+| Muet, solo, volume, panoramique par canal | Mute, solo, knobs | Muet, solo, volume, panoramique | ✅ | N3 |
 | Témoins d'activité | Activity LED | Témoins | ✅ | N0 |
-| Sélection de la piste de mixage | Mixer track | Routage vers une piste | 🌐 | N5 |
+| Sélection de la piste de mixage | Mixer track | Routage vers une piste (numéro dans le rack) | 🟡 | N3, N5 |
 | Groupes et filtres de canaux | Filter groups | Groupes de canaux | ⬜ | E |
-| Couleurs, icônes, noms | Color, icon | Couleurs, noms | 🟡 | N3 |
-| Cloner, déplacer, supprimer, remplacer | Clone, move, delete, replace | Mêmes actions | ⬜ | N3 |
+| Couleurs, icônes, noms | Color, icon | Renommer, 16 couleurs ; icônes à venir | 🟡 | N3, E |
+| Cloner, déplacer, supprimer, remplacer | Clone, move, delete, replace | Cloner, monter, descendre, supprimer, remplacer le son | ✅ | N3 |
 | Remplir tous les N pas, décaler, inverser, aléatoire | Fill each N steps, rotate, randomize | Mêmes outils | ⬜ | E |
 | Couches (un déclenchement joue plusieurs canaux) | Layer channel | Couches | ⬜ | E |
 | Envoyer au piano roll | Send to piano roll | Ouvrir dans le piano roll | ⬜ | N4 |

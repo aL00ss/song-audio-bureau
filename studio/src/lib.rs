@@ -5,6 +5,7 @@ pub mod app;
 pub mod coquille;
 pub mod navigateur;
 pub mod pont;
+pub mod rack;
 pub mod theme;
 
 pub use app::Studio;
