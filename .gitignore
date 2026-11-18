@@ -1,0 +1,7 @@
+node_modules/
+dist/
+target/
+src-tauri/target/
+__pycache__/
+*.log
+test-results/
