@@ -15,6 +15,8 @@ export default function App() {
     Object.assign(window, {
       __studio: {
         etat: useStudio.getState,
+        /** Le magasin lui-même (tests : régler un état sans passer par l'interface). */
+        magasin: useStudio,
         audio,
         /** Canal MIDI qui joue un canal du projet. */
         canalMidi: (id: string) => attribuerCanauxMidi(useStudio.getState().projet.canaux).get(id),

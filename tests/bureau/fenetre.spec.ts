@@ -1,5 +1,8 @@
 // Tests de l'application de bureau : Playwright se branche sur la fenêtre WebView2 de Tauri
 // (lancée avec WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222).
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test'
 
 const PORT = process.env.PORT_DEBOGAGE ?? '9222'
@@ -112,4 +115,22 @@ test('métronome : le bouton existe sur le bureau et le maître sonne même sans
   await page.getByTestId('lecture').click()
   expect(await crete(0, 1200)).toBeLessThan(0.0005)
   await page.getByTestId('stop').click()
+})
+
+test('fichier de projet : Ctrl+S écrit sur le disque, relecture identique, seuls les projets sont acceptés', async () => {
+  const chemin = join(tmpdir(), `essai-${Date.now()}.song-audio.json`)
+  await page.evaluate(() => (window as any).__studio.etat().nouveauDepuisModele('hip-hop'))
+  await page.evaluate(() => (window as any).__studio.etat().changerTempo(97))
+  // comme après « Enregistrer sous » : le projet a désormais un fichier
+  await page.evaluate((c) => (window as any).__studio.magasin.setState({ cheminProjet: c }), chemin)
+  await expect(page).toHaveTitle(/^• essai-\d+ — song-audio$/)
+  await page.keyboard.press('Control+s')
+  await expect(page).toHaveTitle(/^essai-\d+ — song-audio$/)
+  expect(existsSync(chemin)).toBe(true)
+  expect(JSON.parse(readFileSync(chemin, 'utf-8')).tempo).toBe(97)
+  const relu = await page.evaluate((c) => (window as any).__TAURI_INTERNALS__.invoke('projet_lire', { chemin: c }), chemin)
+  expect(JSON.parse(relu).tempo).toBe(97)
+  const refus = await page.evaluate(() => (window as any).__TAURI_INTERNALS__.invoke('projet_ecrire', { chemin: 'C:/Windows/Temp/autre.txt', contenu: 'x' }).then(() => 'écrit', (e: unknown) => String(e)))
+  expect(refus).toContain("n'est pas un fichier de projet")
+  rmSync(chemin)
 })

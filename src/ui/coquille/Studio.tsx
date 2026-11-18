@@ -18,6 +18,8 @@ import { PanneauUnique } from './PanneauUnique'
 import { type ApiDock, basculerPanneau, CLE_DISPOSITION, dispositionParDefaut, type IdPanneau, ouvrirPanneau } from './panneaux'
 import { noteDuCode } from '../../musique/clavier'
 import { actionPourTouche, toucheDepuisEvenement } from './raccourcis'
+import { enregistrerOuTelecharger, ouvrirProjetSelonPlateforme } from './actionsFichier'
+import { TitreFenetre } from './TitreFenetre'
 
 const theme: DockviewTheme = { name: 'studio', className: 'dockview-theme-dark theme-studio', colorScheme: 'dark' }
 
@@ -115,6 +117,11 @@ export function Studio() {
       else if (action.type === 'lecture') void basculerLecture()
       else if (action.type === 'stop') arreter()
       else if (action.type === 'octave') changerOctave(action.sens)
+      else if (action.type === 'annuler') useStudio.getState().annuler()
+      else if (action.type === 'retablir') useStudio.getState().retablir()
+      else if (action.type === 'enregistrer') void enregistrerOuTelecharger(false)
+      else if (action.type === 'enregistrerSous') void enregistrerOuTelecharger(true)
+      else if (action.type === 'ouvrir') ouvrirProjetSelonPlateforme()
       else if (action.type === 'note' && !e.repeat && !notesTenues.has(action.code)) {
         const { clavier, canalSelectionne } = useStudio.getState()
         const hauteur = noteDuCode(action.code, clavier.base)
@@ -149,6 +156,7 @@ export function Studio() {
 
   return (
     <div className="flex h-full flex-col">
+      <TitreFenetre />
       <BarreTransport />
       {message && (
         <p role="alert" data-testid="message" className="border-b border-black/50 bg-accent/15 px-3 py-1 text-accent">

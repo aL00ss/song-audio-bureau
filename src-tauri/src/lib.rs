@@ -239,6 +239,33 @@ async fn moteur_rendre_wav(etat: State<'_, EtatMoteur>, configuration: Configura
     Ok(Response::new(octets))
 }
 
+/// Extensions de fichier que l'interface peut lire et écrire (rien d'autre sur le disque).
+const EXTENSIONS_PROJET: [&str; 2] = [".song-audio.json", ".json"];
+
+fn verifier_chemin_projet(chemin: &str) -> Result<std::path::PathBuf, String> {
+    let bas = chemin.to_lowercase();
+    if !EXTENSIONS_PROJET.iter().any(|e| bas.ends_with(e)) {
+        return Err(format!("« {chemin} » n'est pas un fichier de projet"));
+    }
+    Ok(std::path::PathBuf::from(chemin))
+}
+
+#[tauri::command]
+fn projet_lire(chemin: String) -> Result<String, String> {
+    let chemin = verifier_chemin_projet(&chemin)?;
+    std::fs::read_to_string(&chemin).map_err(|e| format!("lecture de {} : {e}", chemin.display()))
+}
+
+/// Écrit d'abord un fichier temporaire, puis le renomme : un plantage en pleine écriture ne
+/// laisse jamais un projet à moitié écrit.
+#[tauri::command]
+fn projet_ecrire(chemin: String, contenu: String) -> Result<(), String> {
+    let chemin = verifier_chemin_projet(&chemin)?;
+    let temporaire = chemin.with_extension("json.tmp");
+    std::fs::write(&temporaire, contenu).map_err(|e| format!("écriture de {} : {e}", temporaire.display()))?;
+    std::fs::rename(&temporaire, &chemin).map_err(|e| format!("enregistrement de {} : {e}", chemin.display()))
+}
+
 /// Version de l'application, lisible depuis l'interface (vérifie que le pont Tauri répond).
 #[tauri::command]
 fn version() -> String {
@@ -248,6 +275,7 @@ fn version() -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn lancer() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
@@ -266,7 +294,9 @@ pub fn lancer() {
             moteur_mesures,
             moteur_session,
             moteur_transport,
-            moteur_rendre_wav
+            moteur_rendre_wav,
+            projet_lire,
+            projet_ecrire
         ])
         .run(tauri::generate_context!())
         .expect("échec du lancement de l'application");

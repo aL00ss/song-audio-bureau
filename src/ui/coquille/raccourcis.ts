@@ -11,6 +11,11 @@ export type Action =
   /** Touche du clavier de l'ordinateur qui joue une note (code physique). */
   | { type: 'note'; code: string }
   | { type: 'octave'; sens: -1 | 1 }
+  | { type: 'annuler' }
+  | { type: 'retablir' }
+  | { type: 'enregistrer' }
+  | { type: 'enregistrerSous' }
+  | { type: 'ouvrir' }
 
 export interface Touche {
   key: string
@@ -42,6 +47,16 @@ export function saisieEnCours(cible: Touche['cible']): boolean {
 }
 
 export function actionPourTouche(touche: Touche): Action | null {
+  // Ctrl+Z, Ctrl+Y, Ctrl+Maj+Z (Cmd sur Mac) ; dans un champ de saisie, c'est le champ qui annule
+  if ((touche.ctrlKey || touche.metaKey) && !touche.altKey && !saisieEnCours(touche.cible)) {
+    if (touche.code === 'KeyZ') return { type: touche.shiftKey ? 'retablir' : 'annuler' }
+    if (touche.code === 'KeyY' && !touche.shiftKey) return { type: 'retablir' }
+  }
+  // Ctrl+S, Ctrl+Maj+S, Ctrl+O : même dans un champ (comme partout ailleurs)
+  if ((touche.ctrlKey || touche.metaKey) && !touche.altKey) {
+    if (touche.code === 'KeyS') return { type: touche.shiftKey ? 'enregistrerSous' : 'enregistrer' }
+    if (touche.code === 'KeyO' && !touche.shiftKey) return { type: 'ouvrir' }
+  }
   if (touche.ctrlKey || touche.metaKey || touche.altKey) return null
   const panneau = PANNEAUX_PAR_TOUCHE[touche.code]
   if (panneau) return touche.repeat ? null : { type: 'panneau', id: panneau }

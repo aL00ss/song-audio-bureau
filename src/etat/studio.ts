@@ -19,6 +19,9 @@ import * as playlist from '../projet/playlist'
 import { versMidiOctets } from '../projet/exportMidi'
 import { notesAttendues, noteJuste } from '../projet/partie'
 import { deserialiser, ErreurProjet, serialiser } from '../projet/serialisation'
+import * as historiques from '../projet/historique'
+import { modele } from '../projet/modeles'
+import { choisirEmplacement, choisirProjet, ecrireProjet, nomDuFichier } from '../ui/commun/fichiersBureau'
 import { BASE_DEFAUT, decalerBase, detecterDisposition, type DispositionClavier } from '../musique/clavier'
 import type { NoteMusicale } from '../projet/modele'
 
@@ -99,6 +102,22 @@ interface EtatStudio {
   /** Rendu WAV hors ligne (null en cas d'échec : un message l'explique). */
   exporterWav(): Promise<Blob | null>
   exportEnCours: boolean
+  // ---- fichier du projet (application de bureau)
+  /** Fichier d'où vient le projet, ou null s'il n'a jamais été enregistré. */
+  cheminProjet: string | null
+  /** Modifié depuis la dernière ouverture ou le dernier enregistrement. */
+  modifie: boolean
+  /** Enregistre dans le fichier du projet (ou demande où, la première fois). Vrai si fait. */
+  enregistrer(): Promise<boolean>
+  enregistrerSous(): Promise<boolean>
+  /** Ouvre un projet choisi dans la boîte de dialogue du système. */
+  ouvrirDepuisDisque(): Promise<void>
+  nouveauDepuisModele(id: string): void
+  // ---- annuler / rétablir
+  peutAnnuler: boolean
+  peutRetablir: boolean
+  annuler(): void
+  retablir(): void
   // ---- métronome (transport du moteur Rust)
   metronomeDisponible: boolean
   metronome: boolean
@@ -137,6 +156,10 @@ export function projetVide(): Projet {
 }
 
 let moteur: MoteurAudio | null = null
+/** Historique des modifications du projet ; tenu hors de l'état React (que des références). */
+let historique = historiques.historiqueVide()
+/** Vrai pendant un changement de projet qui ne doit pas entrer dans l'historique. */
+let horsHistorique = false
 
 /** Dans l'application de bureau, le son est rendu par le moteur Rust. */
 export const estBureau = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -193,6 +216,17 @@ export const useStudio = create<EtatStudio>()((set, get) => {
     return true
   }
 
+  /** Va à un état de l'historique (annuler ou rétablir), sans l'enregistrer comme modification. */
+  const revenir = ({ historique: h, projet }: { historique: historiques.Historique; projet: Projet }) => {
+    historique = h
+    horsHistorique = true
+    const selection = projet.canaux.some((c) => c.id === get().canalSelectionne) ? get().canalSelectionne : (projet.canaux[0]?.id ?? null)
+    // annuler ou rétablir change aussi le projet par rapport à son fichier
+    set({ projet, canalSelectionne: selection, peutAnnuler: h.passe.length > 0, peutRetablir: h.futur.length > 0, modifie: true })
+    horsHistorique = false
+    synchroniser(projet)
+  }
+
   /** Reprend le projet de la dernière visite, s'il y en a un et qu'il est lisible. */
   const restaurer = async () => {
     const auDepart = get().projet
@@ -200,7 +234,9 @@ export const useStudio = create<EtatStudio>()((set, get) => {
       const texte = await lireStockage<string>(CLE_SAUVEGARDE)
       if (!texte || get().projet !== auDepart) return // rien de gardé, ou déjà modifié entre-temps
       const projet = deserialiser(texte)
+      horsHistorique = true
       set({ projet, canalSelectionne: projet.canaux[0]?.id ?? null })
+      horsHistorique = false
     } catch (erreur) {
       console.warn('Sauvegarde automatique illisible, ignorée :', erreur)
     }
@@ -270,8 +306,71 @@ export const useStudio = create<EtatStudio>()((set, get) => {
     remplacerProjet(projet) {
       transport?.arreter()
       set({ partie: null })
-      set({ projet, message: null, canalSelectionne: projet.canaux[0]?.id ?? null })
+      // un autre projet : son historique repart de zéro
+      historique = historiques.historiqueVide()
+      horsHistorique = true
+      set({
+        projet,
+        message: null,
+        canalSelectionne: projet.canaux[0]?.id ?? null,
+        peutAnnuler: false,
+        peutRetablir: false,
+        cheminProjet: null,
+        modifie: false,
+      })
+      horsHistorique = false
       synchroniser(projet)
+    },
+
+    cheminProjet: null,
+    modifie: false,
+
+    async enregistrer() {
+      const chemin = get().cheminProjet
+      if (!chemin) return get().enregistrerSous()
+      try {
+        await ecrireProjet(chemin, serialiser(get().projet))
+        set({ modifie: false, message: null })
+        return true
+      } catch (erreur) {
+        set({ message: `Enregistrement impossible : ${erreur}` })
+        return false
+      }
+    },
+
+    async enregistrerSous() {
+      const chemin = await choisirEmplacement(`${get().projet.nom}.song-audio.json`)
+      if (!chemin) return false
+      set({ cheminProjet: chemin })
+      return get().enregistrer()
+    },
+
+    async ouvrirDepuisDisque() {
+      try {
+        const fichier = await choisirProjet()
+        if (!fichier) return
+        const projet = deserialiser(fichier.contenu)
+        get().remplacerProjet({ ...projet, nom: projet.nom || nomDuFichier(fichier.chemin) })
+        set({ cheminProjet: fichier.chemin, modifie: false })
+      } catch (erreur) {
+        set({ message: erreur instanceof ErreurProjet ? `Projet illisible : ${erreur.message}` : `Ouverture impossible : ${erreur}` })
+      }
+    },
+
+    nouveauDepuisModele(id) {
+      const m = modele(id)
+      if (m) get().remplacerProjet(m.creer())
+    },
+
+    peutAnnuler: false,
+    peutRetablir: false,
+    annuler() {
+      const r = historiques.annuler(historique, get().projet)
+      if (r) revenir(r)
+    },
+    retablir() {
+      const r = historiques.retablir(historique, get().projet)
+      if (r) revenir(r)
     },
 
     chargerDemo() {
@@ -554,3 +653,16 @@ export const useStudio = create<EtatStudio>()((set, get) => {
     },
   }
 })
+
+// Toute modification du projet entre dans l'historique (sauf annuler, rétablir et changer de projet).
+useStudio.subscribe((etat, avant) => {
+  if (etat.projet === avant.projet || horsHistorique) return
+  historique = historiques.enregistrer(historique, avant.projet, Date.now())
+  if (!etat.peutAnnuler || etat.peutRetablir || !etat.modifie) useStudio.setState({ peutAnnuler: true, peutRetablir: false, modifie: true })
+})
+
+/** Titre de la fenêtre : le nom du projet, et un point s'il a des modifications non enregistrées. */
+export function titreFenetre(etat: Pick<EtatStudio, 'projet' | 'modifie' | 'cheminProjet'>): string {
+  const nom = etat.cheminProjet ? nomDuFichier(etat.cheminProjet) : etat.projet.nom
+  return `${etat.modifie ? '• ' : ''}${nom} — song-audio`
+}

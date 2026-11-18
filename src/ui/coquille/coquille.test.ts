@@ -93,6 +93,15 @@ describe('panneaux', () => {
 })
 
 describe('raccourcis', () => {
+  it('Ctrl+Z annule, Ctrl+Y et Ctrl+Maj+Z rétablissent, sauf dans un champ de saisie', () => {
+    expect(actionPourTouche(touche('KeyZ', { ctrlKey: true }))).toEqual({ type: 'annuler' })
+    expect(actionPourTouche(touche('KeyZ', { metaKey: true }))).toEqual({ type: 'annuler' })
+    expect(actionPourTouche(touche('KeyY', { ctrlKey: true }))).toEqual({ type: 'retablir' })
+    expect(actionPourTouche(touche('KeyZ', { ctrlKey: true, shiftKey: true }))).toEqual({ type: 'retablir' })
+    expect(actionPourTouche(touche('KeyZ', { ctrlKey: true, cible: { balise: 'INPUT', type: 'text' } }))).toBeNull()
+    expect(actionPourTouche(touche('KeyZ', { ctrlKey: true, altKey: true }))).toBeNull()
+  })
+
   it('F5 à F9 ouvrent les panneaux, même pendant une saisie', () => {
     expect(actionPourTouche(touche('F6'))).toEqual({ type: 'panneau', id: 'rack' })
     expect(actionPourTouche(touche('F9', { cible: { balise: 'INPUT', type: 'number' } }))).toEqual({ type: 'panneau', id: 'mixer' })

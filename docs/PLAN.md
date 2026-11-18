@@ -91,6 +91,16 @@ et l'application `src-tauri` qui l'expose à l'interface.
   transport). 15 tests Rust, 89 tests unitaires, 64 tests navigateur, 5 tests de la vraie
   fenêtre. Reportés : bouton du décompte (avec l'enregistrement, phase L), changements de
   tempo et de signature dans le temps (avec l'automatisation, phase K).
+- [x] **C — Annuler/rétablir et projets** : historique de toutes les modifications (300
+  étapes, gestes rapprochés regroupés en une seule, tenu hors de l'état React), Ctrl+Z, Ctrl+Y,
+  Ctrl+Maj+Z (laissés aux champs de saisie), entrées dans le menu Fichier ; sur le bureau,
+  vraies boîtes de dialogue du système, Ctrl+S / Ctrl+Maj+S / Ctrl+O, écriture atomique
+  (fichier temporaire puis renommage), seuls les fichiers de projet sont lus ou écrits ; titre
+  de la fenêtre = nom du projet, avec un point s'il a des modifications non enregistrées ;
+  six modèles de projet (vide, hip-hop, électro, orchestre, piano seul, démo) ; sauvegarde
+  automatique et reprise au démarrage (déjà là). 102 tests unitaires, 69 tests navigateur,
+  6 tests de la vraie fenêtre. Reporté : archive de projet avec ses échantillons (quand les
+  échantillons existeront, phase D).
 
 ## Banques de sons retenues (recherche du 2026-11-18)
 
