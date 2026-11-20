@@ -25,14 +25,17 @@ use egui_dock::{DockArea, DockState};
 /// Clé de la disposition des panneaux dans le stockage de l'application.
 pub const CLE_DISPOSITION: &str = "disposition";
 
-/// Où trouver une ressource (banque, morceaux) : à côté de l'exécutable, ou dans le dépôt
-/// (développement).
+/// Où trouver une ressource (banque, morceaux) : à côté de l'exécutable (Windows, dossier
+/// portable), dans les ressources de l'application (macOS), dans /usr/lib/song-audio (Linux), ou
+/// dans le dépôt (développement).
 pub fn chemin_ressource(relatif: &str) -> Option<PathBuf> {
     let depot = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let dossier_exe = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf));
     let candidats = [
-        std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(relatif))),
-        Some(depot.join("public").join(relatif)),
-        Some(depot.join("src-tauri").join(relatif)),
+        dossier_exe.as_ref().map(|d| d.join(relatif)),
+        dossier_exe.as_ref().map(|d| d.join("../Resources").join(relatif)),
+        dossier_exe.as_ref().map(|d| d.join("../lib/song-audio").join(relatif)),
+        Some(depot.join("ressources").join(relatif)),
     ];
     candidats.into_iter().flatten().find(|c| c.exists())
 }
@@ -444,6 +447,20 @@ impl Studio {
             let reponse = ui.add(egui::DragValue::new(&mut tempo).range(20.0..=300.0).speed(0.5).suffix(" BPM").max_decimals(1));
             if reponse.changed() {
                 self.modifier(|p| p.tempo = tempo);
+            }
+            // volume général : le fader du maître
+            ui.separator();
+            let mut maitre = self.projet.mixage.first().map(|p| p.volume).unwrap_or(0.8);
+            ui.spacing_mut().slider_width = 70.0;
+            let texte = projet::mixage::texte_db(projet::mixage::gain_du_fader(maitre));
+            let volume = ui.add(egui::Slider::new(&mut maitre, 0.0..=1.0).show_value(false)).on_hover_text(format!("Volume général : {texte}"));
+            volume.widget_info(|| egui::WidgetInfo::slider(true, maitre as f64, "Volume général"));
+            if volume.changed() {
+                self.modifier(|p| {
+                    if let Some(m) = p.mixage.first_mut() {
+                        m.volume = maitre;
+                    }
+                });
             }
             let position = self.position();
             afficheur(ui, &formater_position(position, self.projet.signature), "Position : mesure:temps:tic");

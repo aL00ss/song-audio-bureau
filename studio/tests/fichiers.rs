@@ -12,7 +12,7 @@ use projet::lecture::ModeLecture;
 use studio::Studio;
 
 fn banque() -> std::sync::Arc<moteur::SoundFont> {
-    let chemin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src-tauri/banques/GeneralUser-GS.sf2");
+    let chemin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ressources/banques/GeneralUser-GS.sf2");
     moteur::charger_banque(&chemin).expect("banque General MIDI")
 }
 

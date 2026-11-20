@@ -1,35 +1,15 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Rust (moteur, projet, application, installeurs)
+target/
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
+# Éditeurs
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
 *.sw?
 
-# Tests navigateur
-test-results
-playwright-report
+# Outils Python (banques)
 __pycache__/
-
-# Rust (application et moteur)
-target/
 
 # Fichier de contexte local
 context du projet*.txt

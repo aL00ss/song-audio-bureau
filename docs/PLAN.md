@@ -13,22 +13,19 @@ Le but final, fonction par fonction : [FONCTIONS-CIBLES.md](FONCTIONS-CIBLES.md)
 - **Le moteur Rust est le chef d'orchestre** : transport à l'échantillon près, graphe audio
   (canaux, pistes de mixage, effets, envois), automatisation, instruments, greffons. Il tourne
   sans l'interface (rendu hors ligne, tests).
-- **L'interface React est un client** : elle garde le modèle du projet (TypeScript pur, testé,
-  avec annuler/rétablir) et envoie au moteur une **session compilée** (ce qui doit sonner, quand
-  et comment) ; le moteur renvoie l'horloge, les niveaux et les événements.
-- On garde ce qui est déjà solide (modèle de projet, logique musicale, doigtés, import et export
-  MIDI, tests) ; on remplace tout le son (SpessaSynth et la Web Audio API) par le moteur Rust.
-- Chaque phase se termine par : tests verts (`cargo test`, Vitest, tests navigateur, tests de la
-  vraie fenêtre), un `.exe` (installeur NSIS) reconstruit et vérifié, le plan mis à jour, un
-  commit poussé.
+- **L'interface native (egui) est dans le même programme** : le modèle du projet (crate
+  `projet`, pur, testé) compile une **session** (ce qui doit sonner, quand et comment) ;
+  l'interface lit directement l'horloge, la position et les mesures du moteur.
+- Chaque phase se termine par : `cargo test --workspace --release` vert, un installeur reconstruit
+  et vérifié (installé, lancé, désinstallé), le plan mis à jour, un commit poussé.
 - Licences : GPL-3.0 pour le code ; sons seulement sous licences redistribuables (CC0, CC BY,
   « sans restriction »), crédités dans l'application.
 
 ## Architecture cible
 
 ```text
-interface (React, TypeScript)                moteur (Rust)
-  modèle du projet + annuler/rétablir   ──►  session compilée (serde)
+studio (egui) + projet (modèle)              moteur (Rust)
+  modèle du projet + annuler/rétablir   ──►  session compilée
   panneaux, éditeurs, navigateur        ◄──  horloge, niveaux, spectres, événements
                                               transport (tempo, boucles, métronome)
                                               graphe : canaux -> pistes -> envois -> maître
@@ -38,8 +35,8 @@ interface (React, TypeScript)                moteur (Rust)
                                               sortie cpal / rendu hors ligne (WAV, FLAC…)
 ```
 
-Organisation du code Rust : une crate `moteur` (bibliothèque, sans Tauri, entièrement testée)
-et l'application `src-tauri` qui l'expose à l'interface.
+Organisation du code : un espace de travail Cargo avec `moteur` (son), `projet` (modèle) et
+`studio` (application) ; les ressources (banque, morceaux, icônes) dans `ressources`.
 
 ## Exigence : pas de limite d'instruments (2026-11-18)
 
@@ -233,6 +230,24 @@ passent par egui_kittest.
   est remplie (sinon le fichier reste celui de la version web). 6 tests `export_midi`,
   4 tests `historique`, 2 tests `modeles`, 1 test de la fiche, 2 tests des sauvegardes, 5 tests
   d'interface (dont l'export WAV vérifié : durée, son, pas de saturation).
+- [x] **N9 — Bascule** : la version native a rattrapé l'ancienne application (Tauri et interface
+  web) ; le seul manque relevé, le volume général dans la barre de transport, est ajouté. Retirés
+  du dépôt : `src-tauri`, l'interface TypeScript (`src`), les tests navigateur et de la fenêtre
+  (`tests`, Playwright), la configuration npm et Vite. Les ressources passent dans `ressources`
+  (banque General MIDI, morceaux, icônes ; les banques SF3 plus fidèles de la version web sont
+  gardées dans `ressources/sons` pour la phase D, la copie SF3 de GeneralUser, en double, est
+  retirée). L'exécutable s'appelle `song-audio`, avec son icône intégrée (Windows). Installeurs
+  par `cargo packager` : NSIS (Windows, par utilisateur, sans droits administrateur), .dmg
+  (macOS), .deb et AppImage (Linux) ; la banque et les morceaux sont installés à côté de
+  l'exécutable (ou dans les ressources de l'application sous macOS, dans /usr/lib/song-audio
+  sous Linux). Installeur Windows vérifié : installation silencieuse, fichiers à leur place,
+  application lancée **sans le dépôt** (banque et morceaux trouvés à côté de l'exécutable),
+  icône présente, désinstallation complète. CI : tests sur les trois systèmes puis installeurs
+  sur les trois systèmes (téléchargeables 30 jours) ; l'ancien job « fenetre » (WebView2) qui
+  échouait disparaît avec l'application Tauri.
+
+La reconstruction native est terminée. Suite : les phases D à O ci-dessous, vers
+[FONCTIONS-CIBLES.md](FONCTIONS-CIBLES.md).
 
 ## Phases
 
@@ -254,7 +269,7 @@ passent par egui_kittest.
 | N | Navigateur et export | Navigateur de fichiers et d'échantillons avec écoute, favoris, glisser-déposer partout, base de greffons et de préréglages ; export WAV, FLAC, MP3, OGG, pistes séparées, sélection | Chaque format relu |
 | O | Finitions | Fenêtres détachables, thèmes, barre d'aide, raccourcis partout, mise à l'échelle, indicateurs (processeur, mémoire, polyphonie), mode performance (lancement de clips), installeurs Windows/macOS/Linux, mises à jour automatiques, documentation | Charge : 64 pistes, 16 instruments, effets, sans craquement |
 
-## Avancement
+## Avancement (première version, Tauri et interface web, retirée à la phase N9)
 
 - [x] **Fondations de l'application** : Tauri 2 affiche l'interface de song-audio (le son passe
   encore par SpessaSynth dans WebView2) ; commande Rust `version` ; icône originale ;

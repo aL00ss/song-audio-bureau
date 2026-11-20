@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn identique_a_la_version_web_sur_les_morceaux_fournis() {
-        let dossier = concat!(env!("CARGO_MANIFEST_DIR"), "/../public/");
+        let dossier = concat!(env!("CARGO_MANIFEST_DIR"), "/../ressources/");
         let reference: Value = serde_json::from_str(include_str!("../tests/donnees/reference-import-web.json")).unwrap();
         let mut verifies = 0;
         for (fichier, attendu) in reference.as_object().unwrap() {

@@ -10,7 +10,7 @@ fn main() -> eframe::Result {
             .with_title("song-audio")
             .with_inner_size([1440.0, 900.0])
             .with_min_inner_size([1024.0, 640.0])
-            .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../../src-tauri/icons/128x128.png")).unwrap_or_default()),
+            .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../../ressources/icones/128x128.png")).unwrap_or_default()),
         ..Default::default()
     };
     eframe::run_native(

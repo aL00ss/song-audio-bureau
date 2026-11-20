@@ -13,7 +13,7 @@ use projet::modele::{OptionsCanal, creer_projet};
 use studio::Studio;
 
 fn studio() -> Harness<'static, Studio> {
-    let chemin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src-tauri/banques/GeneralUser-GS.sf2");
+    let chemin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ressources/banques/GeneralUser-GS.sf2");
     let banque = moteur::charger_banque(&chemin).expect("banque General MIDI");
     let mut h = Harness::builder().with_size([1600.0, 1000.0]).with_step_dt(1.0 / 60.0).build_eframe(|cc| {
         studio::app::appliquer_theme(&cc.egui_ctx);

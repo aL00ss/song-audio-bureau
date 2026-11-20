@@ -10,7 +10,7 @@ use moteur::EtatTransport;
 use studio::Studio;
 
 fn studio() -> Harness<'static, Studio> {
-    let chemin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src-tauri/banques/GeneralUser-GS.sf2");
+    let chemin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ressources/banques/GeneralUser-GS.sf2");
     let banque = moteur::charger_banque(&chemin).expect("banque General MIDI");
     let mut h = Harness::builder().with_size([1400.0, 900.0]).build_eframe(move |cc| {
         studio::app::appliquer_theme(&cc.egui_ctx);
@@ -62,7 +62,7 @@ fn ouvrir_des_fichiers_du_disque() {
     std::fs::create_dir_all(&dossier).unwrap();
     // un MIDI : importé sans jouer
     let midi = dossier.join("Prélude.mid");
-    std::fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("../public/morceaux/prelude-en-do.mid"), &midi).unwrap();
+    std::fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("../ressources/morceaux/prelude-en-do.mid"), &midi).unwrap();
     h.state_mut().ouvrir_fichier(&midi);
     h.step();
     assert_eq!(h.state().projet.nom, "Prélude");

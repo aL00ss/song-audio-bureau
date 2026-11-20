@@ -625,7 +625,7 @@ pub mod tests {
         static BANQUE: OnceLock<Arc<SoundFont>> = OnceLock::new();
         BANQUE
             .get_or_init(|| {
-                let chemin = concat!(env!("CARGO_MANIFEST_DIR"), "/../src-tauri/banques/GeneralUser-GS.sf2");
+                let chemin = concat!(env!("CARGO_MANIFEST_DIR"), "/../ressources/banques/GeneralUser-GS.sf2");
                 Arc::new(SoundFont::new(&mut File::open(chemin).expect("banque introuvable")).expect("banque illisible"))
             })
             .clone()

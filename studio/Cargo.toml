@@ -4,6 +4,13 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 publish = false
+description = "Studio de musique : séquenceur, piano roll, mixer, arrangement"
+authors = ["aL00ss"]
+build = "build.rs"
+
+[[bin]]
+name = "song-audio"
+path = "src/main.rs"
 
 [dependencies]
 eframe = { version = "0.36", features = ["persistence"] }
@@ -15,3 +22,31 @@ rfd = "0.18.0"
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["eframe"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+# Installeurs (cargo packager) : NSIS sous Windows, .app et .dmg sous macOS, .deb et AppImage
+# sous Linux. La banque de sons et les morceaux sont installés à côté de l'exécutable.
+[package.metadata.packager]
+product-name = "song-audio"
+identifier = "io.github.al00ss.song-audio"
+category = "Music"
+license-file = "../LICENSE"
+before-packaging-command = "cargo build -p studio --release"
+out-dir = "../target/installeurs"
+binaries = [{ path = "song-audio", main = true }]
+icons = [
+  "../ressources/icones/32x32.png",
+  "../ressources/icones/128x128.png",
+  "../ressources/icones/128x128@2x.png",
+  "../ressources/icones/icon.icns",
+  "../ressources/icones/icon.ico",
+]
+resources = [
+  { src = "../ressources/banques", target = "banques" },
+  { src = "../ressources/morceaux", target = "morceaux" },
+]
+
+[package.metadata.packager.deb]
+depends = ["libasound2", "libgtk-3-0"]

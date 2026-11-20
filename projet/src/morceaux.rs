@@ -32,7 +32,7 @@ mod tests {
 
     #[test]
     fn catalogue_fourni_lisible_et_fichiers_presents() {
-        let dossier = concat!(env!("CARGO_MANIFEST_DIR"), "/../public/");
+        let dossier = concat!(env!("CARGO_MANIFEST_DIR"), "/../ressources/");
         let catalogue = lire_catalogue(&std::fs::read_to_string(format!("{dossier}morceaux/catalogue.json")).unwrap()).unwrap();
         assert_eq!(catalogue.len(), 5);
         for m in &catalogue {
