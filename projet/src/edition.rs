@@ -43,8 +43,7 @@ pub fn ajouter_note(notes: &[NoteMusicale], tic: i64, duree: i64, hauteur: i32, 
         tic: tic.clamp(0, u32::MAX as i64) as u32,
         duree: duree.clamp(1, u32::MAX as i64) as u32,
         hauteur: hauteur.clamp(0, 127) as u8,
-        velocite: velocite.clamp(1, 127) as u8,
-    });
+        velocite: velocite.clamp(1, 127) as u8, ..Default::default() });
     resultat
 }
 
@@ -130,7 +129,7 @@ mod tests {
     use super::*;
 
     fn n(tic: u32, hauteur: u8, duree: u32) -> NoteMusicale {
-        NoteMusicale { tic, duree, hauteur, velocite: 100 }
+        NoteMusicale { tic, duree, hauteur, velocite: 100, ..Default::default() }
     }
 
     fn sel(i: &[usize]) -> Selection {
@@ -159,7 +158,7 @@ mod tests {
     #[test]
     fn ajouter_et_supprimer() {
         let notes = ajouter_note(&[n(0, 60, 24)], -5, 0, 200, 0);
-        assert_eq!(notes[1], NoteMusicale { tic: 0, duree: 1, hauteur: 127, velocite: 1 });
+        assert_eq!(notes[1], NoteMusicale { tic: 0, duree: 1, hauteur: 127, velocite: 1, ..Default::default() });
         assert_eq!(supprimer_notes(&notes, &sel(&[0])), vec![notes[1]]);
     }
 

@@ -6,7 +6,9 @@
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2, WidgetInfo, WidgetType};
 use moteur::EtatTransport;
 use projet::gm::nom_son_batterie;
-use projet::pas::{PAS_MAX, definir_note_defaut, definir_nombre_de_pas, definir_pas, definir_velocite_pas, est_en_mode_pas, nombre_de_pas, velocites_des_pas};
+use projet::pas::{
+    PAS_MAX, ParametrePas, definir_note_defaut, definir_nombre_de_pas, definir_parametre_pas, definir_pas, est_en_mode_pas, nombre_de_pas, notes_des_pas, velocites_des_pas,
+};
 use projet::temps::TICS_PAR_PAS;
 use projet::canaux::{PALETTE, cloner_canal, colorer_canal, deplacer_canal, remplacer_son, renommer_canal, supprimer_canal};
 use projet::gm::{FAMILLES, nom_instrument};
@@ -231,8 +233,21 @@ impl Studio {
             let notes = pattern.notes.get(&canal.id).cloned().unwrap_or_default();
             if est_en_mode_pas(&notes, canal.note_defaut) {
                 ui.separator();
-                ui.label(RichText::new(format!("Vélocité : {}", canal.nom)).small().color(theme::DISCRET));
-                self.velocites(ui, &canal, &velocites_des_pas(&pattern, &canal.id, canal.note_defaut), vue);
+                // éditeur des pas : le paramètre choisi, pour chaque pas actif
+                ui.horizontal(|ui| {
+                    let mut parametre = self.parametre_pas;
+                    egui::ComboBox::from_id_salt("parametre des pas").selected_text(RichText::new(parametre.nom()).small()).show_ui(ui, |ui| {
+                        for p in ParametrePas::TOUS {
+                            ui.selectable_value(&mut parametre, p, p.nom());
+                        }
+                    });
+                    self.parametre_pas = parametre;
+                    ui.label(RichText::new(&canal.nom).small().color(theme::DISCRET));
+                    if matches!(parametre, ParametrePas::Panoramique | ParametrePas::HauteurFine) && canal.source == SourceCanal::Soundfont {
+                        ui.label(RichText::new("(sans effet avec la banque General MIDI : son panoramique et sa hauteur valent pour tout le canal)").small().color(theme::DISCRET));
+                    }
+                });
+                self.editeur_pas(ui, &canal, &notes_des_pas(&pattern, &canal.id, canal.note_defaut), vue);
             }
         }
     }
@@ -447,34 +462,47 @@ impl Studio {
         }
     }
 
-    /// Une barre par pas actif, sous la colonne de son pas : on règle la vélocité en cliquant ou
-    /// en glissant verticalement. Les barres suivent le défilement horizontal du rack.
-    fn velocites(&mut self, ui: &mut egui::Ui, canal: &projet::Canal, velocites: &[u8], vue: Rect) {
+    /// Une barre par pas actif, sous la colonne de son pas : le paramètre choisi (vélocité,
+    /// panoramique, hauteur fine, relâchement, décalage) se règle en cliquant ou en glissant
+    /// verticalement ; panoramique et hauteur fine partent du milieu. Les barres suivent le
+    /// défilement horizontal du rack.
+    fn editeur_pas(&mut self, ui: &mut egui::Ui, canal: &projet::Canal, notes: &[Option<NoteMusicale>], vue: Rect) {
         let (zone, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), HAUTEUR_VELOCITES), Sense::hover());
-        if self.colonnes_pas.len() < velocites.len() {
+        if self.colonnes_pas.len() < notes.len() {
             return; // aucune grille visible : rien à aligner
         }
+        let parametre = self.parametre_pas;
         let clip = Rect::from_x_y_ranges(vue.x_range(), zone.y_range());
         let peintre = ui.painter_at(clip);
-        for (i, &v) in velocites.iter().enumerate() {
+        for (i, note) in notes.iter().enumerate() {
             let x = self.colonnes_pas[i];
             let rect = Rect::from_x_y_ranges(x, zone.y_range());
             if !clip.intersects(rect) {
                 continue;
             }
-            let reponse = ui.interact(rect.intersect(clip), ui.id().with(("velocite", i)), Sense::click_and_drag());
-            reponse.widget_info(|| WidgetInfo::slider(true, v as f64, format!("Vélocité du pas {}", i + 1)));
+            let reponse = ui.interact(rect.intersect(clip), ui.id().with(("parametre du pas", i)), Sense::click_and_drag());
+            let valeur = note.map(|n| parametre.lire(&n)).unwrap_or(0.0);
+            let nom = format!("{} du pas {}", parametre.nom(), i + 1);
+            reponse.widget_info(|| WidgetInfo::slider(true, valeur as f64, &nom));
             peintre.rect_filled(rect.shrink2(Vec2::new(1.0, 0.0)), 1.0, theme::FOND);
-            if v > 0 {
-                let haut = rect.bottom() - rect.height() * v as f32 / 127.0;
-                let barre = Rect::from_min_max(Pos2::new(rect.left() + 3.0, haut), Pos2::new(rect.right() - 3.0, rect.bottom()));
-                peintre.rect_filled(barre, 1.0, couleur(&canal.couleur));
+            let Some(n) = note else { continue };
+            let y = |v: f32| rect.bottom() - rect.height() * v;
+            let (haut, bas) = if parametre.centre() { (y(valeur.max(0.5)), y(valeur.min(0.5))) } else { (y(valeur), rect.bottom()) };
+            let barre = Rect::from_min_max(Pos2::new(rect.left() + 3.0, haut), Pos2::new(rect.right() - 3.0, bas.max(haut + 1.0)));
+            peintre.rect_filled(barre, 1.0, couleur(&canal.couleur));
+            if parametre.centre() {
+                peintre.hline(rect.x_range(), y(0.5), Stroke::new(1.0, theme::BORD));
             }
-            if v > 0 && (reponse.is_pointer_button_down_on() || reponse.dragged()) {
+            let reponse = reponse.on_hover_text(parametre.texte(n));
+            if reponse.is_pointer_button_down_on() || reponse.dragged() {
                 if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
-                    let voulue = ((rect.bottom() - pos.y) / rect.height() * 127.0).round() as i32;
+                    let mut voulue = (rect.bottom() - pos.y) / rect.height();
+                    // retour au milieu facile pour les paramètres centrés
+                    if parametre.centre() && (voulue - 0.5).abs() < 0.04 {
+                        voulue = 0.5;
+                    }
                     let id = canal.id.clone();
-                    self.modifier(|p| definir_velocite_pas(p, &id, i as u32, voulue));
+                    self.modifier(|p| definir_parametre_pas(p, &id, i as u32, parametre, voulue));
                 }
             }
         }

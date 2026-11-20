@@ -37,6 +37,7 @@ fn canal<'a>(h: &'a Harness<'static, Studio>, nom: &'a str) -> egui_kittest::Nod
 fn autres_listes(h: &Harness<'static, Studio>) -> Vec<String> {
     let mut v: Vec<String> = projet::edition::GRILLES.iter().map(|(n, _)| n.to_string()).collect();
     v.extend(h.state().projet.patterns.iter().map(|p| p.nom.clone()));
+    v.extend(projet::pas::ParametrePas::TOUS.iter().map(|p| p.nom().to_string()));
     v
 }
 
@@ -369,4 +370,32 @@ fn outils_de_pas_groupes_et_swing_du_canal() {
     h.key_press(egui::Key::ArrowLeft);
     h.run_steps(2);
     assert!(h.state().projet.canaux[1].swing < 1.0, "swing {}", h.state().projet.canaux[1].swing);
+}
+
+#[test]
+fn editeur_des_pas_panoramique_et_retour_au_centre() {
+    let mut h = studio();
+    h.get_by_label("Pas 1 Clap").click();
+    h.step();
+    canal(&h, "Clap").click();
+    h.step();
+    h.state_mut().parametre_pas = projet::pas::ParametrePas::Panoramique;
+    h.run_steps(2);
+    let r = h.get_by_label("Panoramique du pas 1").rect();
+    let haut = Pos2::new(r.center().x, r.top() + 0.5);
+    deplacer(&mut h, haut);
+    bouton(&mut h, haut, egui::PointerButton::Primary, true);
+    bouton(&mut h, haut, egui::PointerButton::Primary, false);
+    let note = |h: &Harness<'static, Studio>| {
+        let s = h.state();
+        projet::pas::notes_des_pas(s.projet.pattern_actif(), &s.projet.canaux[1].id, s.projet.canaux[1].note_defaut)[0].unwrap()
+    };
+    assert!(note(&h).pan >= 95, "à droite : {}", note(&h).pan);
+    // près du milieu : retour exact au centre
+    let milieu = Pos2::new(r.center().x, r.center().y + 1.0);
+    deplacer(&mut h, milieu);
+    bouton(&mut h, milieu, egui::PointerButton::Primary, true);
+    bouton(&mut h, milieu, egui::PointerButton::Primary, false);
+    assert_eq!(note(&h).pan, 0);
+    assert_eq!(note(&h).velocite, 100, "la vélocité n'a pas bougé");
 }

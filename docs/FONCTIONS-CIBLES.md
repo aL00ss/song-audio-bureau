@@ -114,7 +114,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Séquenceur pas à pas | Step sequencer | Pas cliquables, clavier, tête de lecture | ✅ | N3 |
 | Peindre au glisser, effacer | Paint steps | Peinture et effacement au glisser | ✅ | N3 |
 | Longueur du pattern, pas par mesure | Pattern length | Longueur réglable (1 à 512 pas) | ✅ | N3 |
-| Paramètres par pas : vélocité, relâchement, hauteur fine, panoramique, modulations X/Y, décalage | Graph editor | Éditeur graphique des pas | 🟡 (vélocité) | E |
+| Paramètres par pas : vélocité, relâchement, hauteur fine, panoramique, modulations X/Y, décalage | Graph editor | Éditeur graphique des pas (tout sauf les modulations X/Y) | 🟡 | E, K |
 | Swing global et par canal | Swing, channel swing | Swing global et part par canal | ✅ | N3, E |
 | Muet, solo, volume, panoramique par canal | Mute, solo, knobs | Muet, solo, volume, panoramique | ✅ | N3 |
 | Témoins d'activité | Activity LED | Témoins | ✅ | N0 |

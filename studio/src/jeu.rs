@@ -164,7 +164,7 @@ impl Studio {
             let id = canal.to_string();
             self.modifier(|p| {
                 if p.canal(&id).is_some() {
-                    p.pattern_actif_mut().notes.entry(id).or_default().push(projet::NoteMusicale { tic, duree, hauteur, velocite: tenue.velocite });
+                    p.pattern_actif_mut().notes.entry(id).or_default().push(projet::NoteMusicale { tic, duree, hauteur, velocite: tenue.velocite, ..Default::default() });
                 }
             });
         }

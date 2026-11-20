@@ -314,6 +314,20 @@ La reconstruction native est terminée. Suite : les phases D à O ci-dessous, ve
   nouveau) et filtre du rack par groupe ; un canal filtré garde son rang réel (moteur, témoins).
   Les deux champs ne sont écrits dans le fichier que s'ils diffèrent de la valeur par défaut.
   3 tests du modèle, 1 test d'interface.
+- [x] **E2 — Paramètres par pas** : chaque note porte en plus un panoramique (-100 à 100), un
+  réglage fin de hauteur (-100 à 100 cents), une vélocité de relâchement et un décalage (0 à
+  23 tics, sans changer sa place dans la grille : le canal reste en mode pas) ; champs écrits
+  seulement s'ils diffèrent de la valeur par défaut. Éditeur des pas du rack : choix du
+  paramètre (vélocité, panoramique, hauteur fine, relâchement, décalage), barres qui partent
+  du milieu pour les paramètres centrés, retour exact au centre près du milieu, valeur au
+  survol. Lecture : le décalage s'ajoute au swing ; panoramique et réglage fin partent vers le
+  moteur par un message de note « expressive » (les notes ordinaires gardent le message
+  habituel) ; l'échantillonneur et le synthé intégré les appliquent voix par voix (le synthé
+  mélange désormais chaque voix en stéréo) ; une banque SoundFont les ignore (son panoramique
+  et sa hauteur valent pour tout le canal, l'éditeur le signale). La vélocité de relâchement
+  est gardée pour les instruments qui sauront s'en servir. Tests : modèle (lecture, fichier),
+  synthé (note tout à gauche, un demi-ton plus haut), interface (panoramique au pas, retour au
+  centre).
 
 ## Phases
 

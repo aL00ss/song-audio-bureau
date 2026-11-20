@@ -38,7 +38,7 @@ pub fn definir_pas(projet: &mut Projet, canal_id: &str, index: u32, actif: Optio
     let position = notes.iter().position(|n| n.tic == tic && n.hauteur == note_defaut);
     match (actif.unwrap_or(position.is_none()), position) {
         (true, None) => {
-            notes.push(NoteMusicale { tic, duree: DUREE_PAS, hauteur: note_defaut, velocite: VELOCITE_PAS });
+            notes.push(NoteMusicale { tic, duree: DUREE_PAS, hauteur: note_defaut, velocite: VELOCITE_PAS, ..Default::default() });
             notes.sort_by_key(|n| (n.tic, n.hauteur));
         }
         (false, Some(i)) => {
@@ -105,7 +105,7 @@ fn ecrire_pas(projet: &mut Projet, canal_id: &str, velocites: &[u8], note: u8) {
         .iter()
         .enumerate()
         .filter(|(_, v)| **v > 0)
-        .map(|(i, v)| NoteMusicale { tic: i as u32 * TICS_PAR_PAS, duree: DUREE_PAS, hauteur: note, velocite: *v })
+        .map(|(i, v)| NoteMusicale { tic: i as u32 * TICS_PAR_PAS, duree: DUREE_PAS, hauteur: note, velocite: *v, ..Default::default() })
         .collect();
     projet.pattern_actif_mut().notes.insert(canal_id.to_string(), notes);
 }
@@ -163,6 +163,93 @@ pub fn pas_aleatoires(projet: &mut Projet, canal_id: &str, densite: f32, graine:
     ecrire_pas(projet, canal_id, &nouveaux, note);
 }
 
+/// Paramètres d'un pas réglables dans l'éditeur des pas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParametrePas {
+    Velocite,
+    Panoramique,
+    HauteurFine,
+    Relachement,
+    Decalage,
+}
+
+impl ParametrePas {
+    pub const TOUS: [ParametrePas; 5] = [ParametrePas::Velocite, ParametrePas::Panoramique, ParametrePas::HauteurFine, ParametrePas::Relachement, ParametrePas::Decalage];
+
+    pub fn nom(self) -> &'static str {
+        match self {
+            ParametrePas::Velocite => "Vélocité",
+            ParametrePas::Panoramique => "Panoramique",
+            ParametrePas::HauteurFine => "Hauteur fine",
+            ParametrePas::Relachement => "Relâchement",
+            ParametrePas::Decalage => "Décalage",
+        }
+    }
+
+    /// Centré (panoramique, hauteur fine : la barre part du milieu).
+    pub fn centre(self) -> bool {
+        matches!(self, ParametrePas::Panoramique | ParametrePas::HauteurFine)
+    }
+
+    /// Valeur du paramètre d'une note, ramenée entre 0 et 1.
+    pub fn lire(self, n: &NoteMusicale) -> f32 {
+        match self {
+            ParametrePas::Velocite => n.velocite as f32 / 127.0,
+            ParametrePas::Panoramique => (n.pan as f32 + 100.0) / 200.0,
+            ParametrePas::HauteurFine => (n.fin as f32 + 100.0) / 200.0,
+            ParametrePas::Relachement => n.relachement as f32 / 127.0,
+            ParametrePas::Decalage => n.decalage as f32 / (TICS_PAR_PAS - 1) as f32,
+        }
+    }
+
+    /// Règle le paramètre d'une note d'après une valeur entre 0 et 1.
+    pub fn ecrire(self, n: &mut NoteMusicale, valeur: f32) {
+        let v = valeur.clamp(0.0, 1.0);
+        match self {
+            ParametrePas::Velocite => n.velocite = (v * 127.0).round().max(1.0) as u8,
+            ParametrePas::Panoramique => n.pan = (v * 200.0 - 100.0).round() as i8,
+            ParametrePas::HauteurFine => n.fin = (v * 200.0 - 100.0).round() as i16,
+            ParametrePas::Relachement => n.relachement = (v * 127.0).round().max(1.0) as u8,
+            ParametrePas::Decalage => n.decalage = (v * (TICS_PAR_PAS - 1) as f32).round() as u8,
+        }
+    }
+
+    /// Texte d'une valeur : « 64 », « 30 % gauche », « -12 cents », « 5 tics ».
+    pub fn texte(self, n: &NoteMusicale) -> String {
+        match self {
+            ParametrePas::Velocite => n.velocite.to_string(),
+            ParametrePas::Panoramique if n.pan == 0 => "centre".into(),
+            ParametrePas::Panoramique => format!("{} % {}", n.pan.unsigned_abs(), if n.pan < 0 { "gauche" } else { "droite" }),
+            ParametrePas::HauteurFine => format!("{}{} cents", if n.fin > 0 { "+" } else { "" }, n.fin),
+            ParametrePas::Relachement => n.relachement.to_string(),
+            ParametrePas::Decalage => format!("{} tics", n.decalage),
+        }
+    }
+}
+
+/// Note de chaque pas du canal dans le pattern (None : pas inactif).
+pub fn notes_des_pas(pattern: &Pattern, canal_id: &str, note_defaut: u8) -> Vec<Option<NoteMusicale>> {
+    let mut pas = vec![None; nombre_de_pas(pattern) as usize];
+    for n in pattern.notes.get(canal_id).map(Vec::as_slice).unwrap_or(&[]) {
+        if n.hauteur == note_defaut && n.tic % TICS_PAR_PAS == 0 {
+            if let Some(p) = pas.get_mut((n.tic / TICS_PAR_PAS) as usize) {
+                *p = Some(*n);
+            }
+        }
+    }
+    pas
+}
+
+/// Règle un paramètre d'un pas actif (valeur entre 0 et 1) ; sans effet sur un pas inactif.
+pub fn definir_parametre_pas(projet: &mut Projet, canal_id: &str, index: u32, parametre: ParametrePas, valeur: f32) {
+    let Some(note_defaut) = projet.canal(canal_id).map(|c| c.note_defaut) else { return };
+    if let Some(notes) = projet.pattern_actif_mut().notes.get_mut(canal_id) {
+        if let Some(n) = notes.iter_mut().find(|n| n.tic == index * TICS_PAR_PAS && n.hauteur == note_defaut) {
+            parametre.ecrire(n, valeur);
+        }
+    }
+}
+
 /// Swing : les notes d'un pas impair (la 2e double croche de chaque croche) sont retardées, de
 /// la moitié d'un pas à 100 %.
 pub fn decalage_swing(tic: u32, swing: f64) -> f64 {
@@ -204,8 +291,8 @@ mod tests {
         assert_eq!(
             p.pattern_actif().notes[&id],
             vec![
-                NoteMusicale { tic: 0, duree: DUREE_PAS, hauteur: 36, velocite: VELOCITE_PAS },
-                NoteMusicale { tic: 96, duree: DUREE_PAS, hauteur: 36, velocite: VELOCITE_PAS },
+                NoteMusicale { tic: 0, duree: DUREE_PAS, hauteur: 36, velocite: VELOCITE_PAS, ..Default::default() },
+                NoteMusicale { tic: 96, duree: DUREE_PAS, hauteur: 36, velocite: VELOCITE_PAS, ..Default::default() },
             ]
         );
         assert_eq!(velocites_des_pas(p.pattern_actif(), &id, 36)[..5], [100, 0, 0, 0, 100]);
@@ -251,7 +338,7 @@ mod tests {
         let demo = creer_demo();
         let pattern = demo.pattern_actif();
         assert!(demo.canaux.iter().all(|c| !est_en_mode_pas(&pattern.notes[&c.id], c.note_defaut)));
-        let n = |tic, hauteur, velocite| NoteMusicale { tic, duree: 22, hauteur, velocite };
+        let n = |tic, hauteur, velocite| NoteMusicale { tic, duree: 22, hauteur, velocite, ..Default::default() };
         assert!(est_en_mode_pas(&[n(24, 60, 90)], 60));
         assert!(!est_en_mode_pas(&[n(25, 60, 90)], 60));
         assert!(!est_en_mode_pas(&[n(24, 62, 90)], 60));
@@ -349,6 +436,34 @@ mod tests {
         assert_eq!(crate::serialisation::deserialiser(&json).unwrap(), p);
         p.canal_mut(&id).unwrap().swing = 1.0;
         assert_eq!(crate::serialisation::serialiser(&p).matches("\"swing\"").count(), 1, "valeur par défaut : seul le swing du projet est écrit");
+    }
+
+    #[test]
+    fn parametres_des_pas_et_lecture() {
+        let (mut p, id) = avec_batterie();
+        definir_pas(&mut p, &id, 2, None);
+        definir_parametre_pas(&mut p, &id, 2, ParametrePas::Panoramique, 0.0);
+        definir_parametre_pas(&mut p, &id, 2, ParametrePas::HauteurFine, 0.75);
+        definir_parametre_pas(&mut p, &id, 2, ParametrePas::Decalage, 1.0);
+        definir_parametre_pas(&mut p, &id, 2, ParametrePas::Relachement, 0.5);
+        definir_parametre_pas(&mut p, &id, 5, ParametrePas::Panoramique, 1.0); // pas inactif : rien
+        let n = notes_des_pas(p.pattern_actif(), &id, 36)[2].unwrap();
+        assert_eq!((n.pan, n.fin, n.decalage, n.relachement), (-100, 50, 23, 64));
+        assert!(notes_des_pas(p.pattern_actif(), &id, 36)[5].is_none());
+        assert_eq!(ParametrePas::Panoramique.texte(&n), "100 % gauche");
+        assert_eq!(ParametrePas::HauteurFine.texte(&n), "+50 cents");
+        assert!((ParametrePas::HauteurFine.lire(&n) - 0.75).abs() < 1e-6);
+        // toujours en mode pas (le décalage ne déplace pas la note dans la grille)
+        assert!(est_en_mode_pas(&p.pattern_actif().notes[&id], 36));
+        // la lecture : départ décalé de 23 tics, panoramique et cents transmis
+        let jouees = notes_a_jouer(&p, ModeLecture::Pattern).0;
+        assert_eq!((jouees[0].debut, jouees[0].pan, jouees[0].cents), (48 + 23, -100, 50));
+        // le fichier les garde, et n'écrit rien pour une note ordinaire
+        let json = crate::serialisation::serialiser(&p);
+        assert_eq!(crate::serialisation::deserialiser(&json).unwrap(), p);
+        definir_pas(&mut p, &id, 9, None);
+        let json = crate::serialisation::serialiser(&p);
+        assert_eq!(json.matches("\"pan\"").count(), 1 + p.canaux.len() + p.mixage.len(), "seule la note réglée écrit son panoramique (canaux et pistes ont le leur)");
     }
 
     #[test]

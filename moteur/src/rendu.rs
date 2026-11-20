@@ -122,7 +122,7 @@ mod tests {
             tempo: 120.0,
             longueur: 384,
             temps_par_mesure: 4,
-            notes: vec![NoteSession { debut: 0, fin: 48, canal: 0, hauteur: 60, velocite: 100 }],
+            notes: vec![NoteSession { debut: 0, fin: 48, canal: 0, hauteur: 60, velocite: 100, pan: 0, cents: 0 }],
             boucler: true,
         };
         let (g, _) = rendre_session(&banque(), FE, &configuration(0, false), &[], &session, 1.0).unwrap();

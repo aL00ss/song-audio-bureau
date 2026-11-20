@@ -218,8 +218,7 @@ pub fn depuis_midi(octets: &[u8], nom: &str) -> Result<Projet, String> {
                     tic: vers_tics(a.tic as u64),
                     duree: vers_tics(*duree as u64).max(1),
                     hauteur: a.hauteur,
-                    velocite: a.velocite.clamp(1, 127),
-                })
+                    velocite: a.velocite.clamp(1, 127), ..Default::default() })
                 .collect();
             let pedale: Vec<(u32, bool)> =
                 piste.pedale.iter().filter(|(_, c, _)| canal_seul.is_none_or(|s| s == *c)).map(|&(t, _, e)| (vers_tics(t as u64), e)).collect();
@@ -374,9 +373,9 @@ mod tests {
     #[test]
     fn pedale_prolonge_les_notes_sauf_touche_rejouee() {
         let notes = vec![
-            NoteMusicale { tic: 0, duree: 10, hauteur: 60, velocite: 100 },
-            NoteMusicale { tic: 20, duree: 10, hauteur: 64, velocite: 100 },
-            NoteMusicale { tic: 50, duree: 10, hauteur: 60, velocite: 100 },
+            NoteMusicale { tic: 0, duree: 10, hauteur: 60, velocite: 100, ..Default::default() },
+            NoteMusicale { tic: 20, duree: 10, hauteur: 64, velocite: 100, ..Default::default() },
+            NoteMusicale { tic: 50, duree: 10, hauteur: 60, velocite: 100, ..Default::default() },
         ];
         let pedale = intervalles_pedale(&[(5, true), (100, false)]);
         let r = appliquer_pedale(&notes, &pedale);

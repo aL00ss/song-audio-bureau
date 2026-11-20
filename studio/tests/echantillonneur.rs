@@ -85,7 +85,7 @@ fn un_instrument_sfz_charge_joue_et_s_exporte() {
     // export WAV d'une note : le la à 440 Hz (et 880 Hz une octave plus haut)
     h.state_mut().modifier(|p| {
         let id = p.canaux[0].id.clone();
-        p.pattern_actif_mut().notes.insert(id, vec![projet::NoteMusicale { tic: 0, duree: 192, hauteur: 81, velocite: 110 }]);
+        p.pattern_actif_mut().notes.insert(id, vec![projet::NoteMusicale { tic: 0, duree: 192, hauteur: 81, velocite: 110, ..Default::default() }]);
     });
     h.step();
     let wav = dossier.join("rendu.wav");

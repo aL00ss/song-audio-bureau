@@ -94,13 +94,13 @@ fn poser_deplacer_redimensionner_effacer() {
     // clic dans le vide : une note d'un demi-temps (48 tics), aimantée au pas, choisie
     let p = ecran(&h, 30.0, 64);
     cliquer(&mut h, p, PointerButton::Primary);
-    assert_eq!(notes(&h), vec![NoteMusicale { tic: 24, duree: 48, hauteur: 64, velocite: 100 }]);
+    assert_eq!(notes(&h), vec![NoteMusicale { tic: 24, duree: 48, hauteur: 64, velocite: 100, ..Default::default() }]);
     assert_eq!(h.state().piano_roll.selection.len(), 1);
     assert!(h.state().modifie);
     // glisser la note : déplacée de deux pas et d'un ton, aimantée
     let (a, b) = (ecran(&h, 40.0, 64), ecran(&h, 90.0, 66));
     glisser(&mut h, a, b, PointerButton::Primary, Modifiers::NONE);
-    assert_eq!(notes(&h)[0], NoteMusicale { tic: 72, duree: 48, hauteur: 66, velocite: 100 });
+    assert_eq!(notes(&h)[0], NoteMusicale { tic: 72, duree: 48, hauteur: 66, velocite: 100, ..Default::default() });
     // glisser son bord droit : la note s'allonge d'un temps
     let bord = ecran(&h, 72.0 + 48.0, 66) - egui::vec2(2.0, 0.0);
     let plus_loin = bord + egui::vec2(96.0 * h.state().piano_roll.zoom, 0.0);
@@ -109,7 +109,7 @@ fn poser_deplacer_redimensionner_effacer() {
     // la note suivante prend la durée de la dernière touchée
     let p = ecran(&h, 400.0, 60);
     cliquer(&mut h, p, PointerButton::Primary);
-    assert_eq!(notes(&h)[1], NoteMusicale { tic: 384, duree: 144, hauteur: 60, velocite: 100 });
+    assert_eq!(notes(&h)[1], NoteMusicale { tic: 384, duree: 144, hauteur: 60, velocite: 100, ..Default::default() });
     // clic droit glissé : efface les notes survolées
     let p = ecran(&h, 400.0, 60);
     cliquer(&mut h, p, PointerButton::Secondary);
@@ -124,9 +124,9 @@ fn lasso_clavier_velocite_et_quantification() {
     let mut h = studio();
     let id = h.state().projet.canaux[0].id.clone();
     let depart = vec![
-        NoteMusicale { tic: 5, duree: 40, hauteur: 60, velocite: 100 },
-        NoteMusicale { tic: 100, duree: 40, hauteur: 62, velocite: 100 },
-        NoteMusicale { tic: 300, duree: 40, hauteur: 70, velocite: 100 },
+        NoteMusicale { tic: 5, duree: 40, hauteur: 60, velocite: 100, ..Default::default() },
+        NoteMusicale { tic: 100, duree: 40, hauteur: 62, velocite: 100, ..Default::default() },
+        NoteMusicale { tic: 300, duree: 40, hauteur: 70, velocite: 100, ..Default::default() },
     ];
     h.state_mut().remplacer_notes(&id, depart.clone());
     h.run_steps(2);
@@ -305,7 +305,7 @@ fn vingt_mille_notes_restent_fluides() {
     let mut h = studio();
     let id = h.state().projet.canaux[0].id.clone();
     // 20 000 notes sur 500 mesures : seules les visibles sont dessinées
-    let beaucoup: Vec<NoteMusicale> = (0..20_000u32).map(|i| NoteMusicale { tic: i * 9, duree: 20, hauteur: 40 + (i % 48) as u8, velocite: 90 }).collect();
+    let beaucoup: Vec<NoteMusicale> = (0..20_000u32).map(|i| NoteMusicale { tic: i * 9, duree: 20, hauteur: 40 + (i % 48) as u8, velocite: 90, ..Default::default() }).collect();
     h.state_mut().modifier(|p| {
         p.pattern_actif_mut().longueur = 20_000 * 9;
         p.pattern_actif_mut().notes.insert(id.clone(), beaucoup);

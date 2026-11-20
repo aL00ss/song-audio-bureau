@@ -103,6 +103,8 @@ pub struct Studio {
     /// Canaux montrés par le rack (filtre de groupe), et nom d'un groupe en cours de saisie.
     pub filtre_groupe: crate::rack::FiltreGroupe,
     pub nouveau_groupe: String,
+    /// Paramètre montré par l'éditeur des pas du rack.
+    pub parametre_pas: projet::pas::ParametrePas,
 }
 
 impl Studio {
@@ -167,6 +169,7 @@ impl Studio {
             banques: Default::default(),
             filtre_groupe: Default::default(),
             nouveau_groupe: String::new(),
+            parametre_pas: projet::pas::ParametrePas::Velocite,
         }
     }
 

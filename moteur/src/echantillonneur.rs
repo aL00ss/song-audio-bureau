@@ -309,7 +309,7 @@ impl Echantillonneur {
         self.instrument.as_ref()
     }
 
-    fn demarrer(&mut self, zone_index: usize, hauteur: u8, velocite: u8, attenuation_db: f32) {
+    fn demarrer(&mut self, zone_index: usize, hauteur: u8, velocite: u8, attenuation_db: f32, pan_note: f32, demi_tons_note: f32) {
         let Some(instrument) = &self.instrument else { return };
         let zone = &instrument.zones[zone_index];
         let r = &zone.region;
@@ -325,14 +325,14 @@ impl Echantillonneur {
             }
         }
         // hauteur : écart à la note racine selon le suivi du clavier, réglage fin, transposition
-        let demi_tons = (hauteur as f32 - r.note_racine as f32) * r.suivi_clavier / 100.0 + r.transposition as f32 + r.accord / 100.0;
+        let demi_tons = (hauteur as f32 - r.note_racine as f32) * r.suivi_clavier / 100.0 + r.transposition as f32 + r.accord / 100.0 + demi_tons_note;
         let pas = 2f64.powf(demi_tons as f64 / 12.0) * zone.echantillon.frequence as f64 / self.frequence as f64;
         // volume : réglage, vélocité (courbe en carré), panoramique à puissance constante
         let v = velocite as f32 / 127.0;
         let suivi = r.suivi_velocite / 100.0;
         let gain_vel = r.gain_courbe(velocite).unwrap_or((1.0 - suivi) + suivi * v * v);
         let gain = 10f32.powf((r.volume_db - attenuation_db) / 20.0) * gain_vel * zone.gain;
-        let p = ((r.pan / 100.0 + self.pan).clamp(-1.0, 1.0) + 1.0) * std::f32::consts::FRAC_PI_4;
+        let p = ((r.pan / 100.0 + self.pan + pan_note).clamp(-1.0, 1.0) + 1.0) * std::f32::consts::FRAC_PI_4;
         // une voix libre, sinon la plus ancienne
         let index = self.voix.iter().position(|v| !v.active).unwrap_or_else(|| (0..VOIX_MAX).min_by_key(|&i| self.voix[i].age).unwrap_or(0));
         self.compteur += 1;
@@ -407,6 +407,10 @@ impl Source for Echantillonneur {
     }
 
     fn note_on(&mut self, hauteur: u8, velocite: u8) {
+        self.note_on_expressive(hauteur, velocite, 0.0, 0.0);
+    }
+
+    fn note_on_expressive(&mut self, hauteur: u8, velocite: u8, pan: f32, demi_tons: f32) {
         if velocite == 0 {
             return self.note_off(hauteur);
         }
@@ -420,7 +424,7 @@ impl Source for Echantillonneur {
         let (zones, n) = self.zones_pour(hauteur, velocite, Declenchement::Attaque);
         self.tenues[hauteur as usize & 127] = Some((self.horloge, velocite));
         for &z in &zones[..n] {
-            self.demarrer(z, hauteur, velocite, 0.0);
+            self.demarrer(z, hauteur, velocite, 0.0, pan, demi_tons);
         }
     }
 
@@ -440,7 +444,7 @@ impl Source for Echantillonneur {
             let (zones, n) = self.zones_pour(hauteur, velocite, Declenchement::Relachement);
             for &z in &zones[..n] {
                 let amortissement = instrument.zones[z].region.amortissement_relachement * tenue;
-                self.demarrer(z, hauteur, velocite, amortissement);
+                self.demarrer(z, hauteur, velocite, amortissement, 0.0, 0.0);
             }
         }
     }

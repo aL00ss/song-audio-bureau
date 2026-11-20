@@ -23,6 +23,9 @@ pub struct NoteJouee {
     pub canal: u32,
     pub hauteur: u8,
     pub velocite: u8,
+    /// Panoramique (-100 à 100) et réglage fin (cents) propres à la note.
+    pub pan: i8,
+    pub cents: i16,
 }
 
 /// Notes d'un pattern. Les notes qui dépassent la fin sont coupées à la fin.
@@ -38,11 +41,12 @@ pub fn notes_du_pattern(projet: &Projet, pattern: &Pattern) -> Vec<NoteJouee> {
             if n.tic >= pattern.longueur {
                 continue;
             }
-            let decalage = decalage_swing(n.tic, projet.swing * canal.swing as f64);
+            // swing (selon la place de la note dans la grille), puis son propre décalage
+            let decalage = decalage_swing(n.tic, projet.swing * canal.swing as f64) + n.decalage as f64;
             let debut = (n.tic as f64 + decalage).round() as u32;
             let fin = ((n.tic + n.duree) as f64 + decalage).round().min(pattern.longueur as f64) as u32;
             if debut < fin {
-                notes.push(NoteJouee { debut, fin, canal: c, hauteur: n.hauteur, velocite: n.velocite.max(1) });
+                notes.push(NoteJouee { debut, fin, canal: c, hauteur: n.hauteur, velocite: n.velocite.max(1), pan: n.pan, cents: n.fin });
             }
         }
     }

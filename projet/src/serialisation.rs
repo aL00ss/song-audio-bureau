@@ -75,7 +75,32 @@ fn lire_note(v: &Value, chemin: &str) -> R<NoteMusicale> {
         duree: entier(champ(o, "duree"), &format!("{chemin}.duree"), 1.0, u32::MAX as f64)? as u32,
         hauteur: entier(champ(o, "hauteur"), &format!("{chemin}.hauteur"), 0.0, 127.0)? as u8,
         velocite: entier(champ(o, "velocite"), &format!("{chemin}.velocite"), 1.0, 127.0)? as u8,
+        pan: match o.get("pan") {
+            None => 0,
+            Some(v) => entier_signe(v, &format!("{chemin}.pan"), -100.0, 100.0)? as i8,
+        },
+        fin: match o.get("fin") {
+            None => 0,
+            Some(v) => entier_signe(v, &format!("{chemin}.fin"), -100.0, 100.0)? as i16,
+        },
+        relachement: match o.get("relachement") {
+            None => crate::modele::RELACHEMENT_DEFAUT,
+            Some(v) => entier(v, &format!("{chemin}.relachement"), 1.0, 127.0)? as u8,
+        },
+        decalage: match o.get("decalage") {
+            None => 0,
+            Some(v) => entier(v, &format!("{chemin}.decalage"), 0.0, (crate::temps::TICS_PAR_PAS - 1) as f64)? as u8,
+        },
     })
+}
+
+/// Entier relatif dans des bornes.
+fn entier_signe(v: &Value, chemin: &str, min: f64, max: f64) -> R<i64> {
+    let n = nombre(v, chemin, min, max)?;
+    if n.fract() != 0.0 {
+        return erreur(format!("{chemin} : nombre entier attendu"));
+    }
+    Ok(n as i64)
 }
 
 fn lire_canal(v: &Value, chemin: &str) -> R<Canal> {

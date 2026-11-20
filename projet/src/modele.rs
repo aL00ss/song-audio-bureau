@@ -24,6 +24,42 @@ pub struct NoteMusicale {
     pub hauteur: u8,
     /// 1 à 127.
     pub velocite: u8,
+    /// Panoramique propre à la note, -100 (gauche) à 100 (droite).
+    #[serde(default, skip_serializing_if = "est_zero_i8")]
+    pub pan: i8,
+    /// Réglage fin de la hauteur, en cents (-100 à 100).
+    #[serde(default, skip_serializing_if = "est_zero_i16")]
+    pub fin: i16,
+    /// Vélocité de relâchement (1 à 127, 64 par défaut).
+    #[serde(default = "relachement_defaut", skip_serializing_if = "est_relachement_defaut")]
+    pub relachement: u8,
+    /// Décalage du départ, en tics (0 à un pas), sans changer la place de la note dans la grille.
+    #[serde(default, skip_serializing_if = "est_zero_u8")]
+    pub decalage: u8,
+}
+
+pub const RELACHEMENT_DEFAUT: u8 = 64;
+
+impl Default for NoteMusicale {
+    fn default() -> Self {
+        NoteMusicale { tic: 0, duree: 1, hauteur: 60, velocite: 100, pan: 0, fin: 0, relachement: RELACHEMENT_DEFAUT, decalage: 0 }
+    }
+}
+
+fn est_zero_i8(v: &i8) -> bool {
+    *v == 0
+}
+fn est_zero_i16(v: &i16) -> bool {
+    *v == 0
+}
+fn est_zero_u8(v: &u8) -> bool {
+    *v == 0
+}
+fn relachement_defaut() -> u8 {
+    RELACHEMENT_DEFAUT
+}
+fn est_relachement_defaut(v: &u8) -> bool {
+    *v == RELACHEMENT_DEFAUT
 }
 
 /// Ce qui produit le son d'un canal.

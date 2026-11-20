@@ -8,7 +8,7 @@ const ACCORDS: [[u8; 3]; 4] = [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59
 const BASSES: [u8; 4] = [36, 33, 29, 31];
 
 fn note(tic: u32, duree: u32, hauteur: u8, velocite: u8) -> NoteMusicale {
-    NoteMusicale { tic, duree, hauteur, velocite }
+    NoteMusicale { tic, duree, hauteur, velocite, ..Default::default() }
 }
 
 pub fn creer_demo() -> Projet {

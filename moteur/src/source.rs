@@ -14,6 +14,12 @@ pub trait Source: Send {
     /// Programme (instrument ou préréglage), batterie, volume (0 à 1), panoramique (-1 à 1).
     fn regler(&mut self, programme: u8, batterie: bool, volume: f32, pan: f32);
     fn note_on(&mut self, hauteur: u8, velocite: u8);
+    /// Note avec son propre panoramique (-1 à 1, ajouté à celui du canal) et un décalage de
+    /// hauteur en demi-tons (réglage fin). Une source qui ne sait pas le faire joue la note
+    /// simplement (une banque SoundFont règle panoramique et hauteur pour tout le canal).
+    fn note_on_expressive(&mut self, hauteur: u8, velocite: u8, _pan: f32, _demi_tons: f32) {
+        self.note_on(hauteur, velocite);
+    }
     fn note_off(&mut self, hauteur: u8);
     /// Coupe net toutes les voix.
     fn tout_couper(&mut self);

@@ -221,6 +221,8 @@ struct Voix {
     ic2: f32,
     /// Ordre d'allumage, pour voler la voix la plus ancienne.
     age: u64,
+    /// Panoramique propre à la note (-1 à 1, ajouté à celui du canal).
+    pan: f32,
 }
 
 impl Voix {
@@ -237,6 +239,7 @@ impl Voix {
             ic1: 0.0,
             ic2: 0.0,
             age: 0,
+            pan: 0.0,
         }
     }
 
@@ -306,8 +309,12 @@ impl Source for Soustractif {
     }
 
     fn note_on(&mut self, hauteur: u8, velocite: u8) {
+        self.note_on_expressive(hauteur, velocite, 0.0, 0.0);
+    }
+
+    fn note_on_expressive(&mut self, hauteur: u8, velocite: u8, pan: f32, demi_tons: f32) {
         self.compteur += 1;
-        let frequence = hauteur_en_hz(hauteur as f32);
+        let frequence = hauteur_en_hz(hauteur as f32 + demi_tons);
         // glissement : la nouvelle note part de la hauteur de la dernière voix jouée
         let depart = if self.reglages.glissement > 0.0 {
             self.voix.iter().filter(|v| v.active()).max_by_key(|v| v.age).map(|v| v.frequence).unwrap_or(frequence)
@@ -330,6 +337,7 @@ impl Source for Soustractif {
         v.volume.etape = Etape::Attaque;
         v.filtre.etape = Etape::Attaque;
         v.age = self.compteur;
+        v.pan = pan.clamp(-1.0, 1.0);
     }
 
     fn note_off(&mut self, hauteur: u8) {
@@ -358,7 +366,11 @@ impl Source for Soustractif {
         let rapport2 = 2f32.powf(r.ecart2 / 12.0);
         let (pentes_volume, pentes_filtre) = (Pentes::new(&r.volume, fe), Pentes::new(&r.filtre, fe));
         let gain_voix = r.niveau;
+        let (pan_canal, gain_canal) = (self.pan, self.gain);
         for v in self.voix.iter_mut().filter(|v| v.active()) {
+            // stéréo : panoramique à puissance constante (celui du canal et celui de la note)
+            let angle = ((pan_canal + v.pan).clamp(-1.0, 1.0) + 1.0) * PI / 4.0;
+            let (gg, gd) = (angle.cos() * std::f32::consts::SQRT_2 * gain_canal, angle.sin() * std::f32::consts::SQRT_2 * gain_canal);
             let (mut g, mut a1) = (0.0f32, 1.0f32);
             for i in 0..gauche.len() {
                 v.frequence += (v.cible - v.frequence) * glisse;
@@ -388,19 +400,12 @@ impl Source for Soustractif {
                 v.ic2 = 2.0 * v2 - v.ic2;
                 let filtre = v2;
                 let amp = v.volume.avancer(&pentes_volume) * v.velocite * gain_voix;
-                gauche[i] += filtre * amp;
+                gauche[i] += filtre * amp * gg;
+                droite[i] += filtre * amp * gd;
                 if !v.active() {
                     break;
                 }
             }
-        }
-        // stéréo : panoramique à puissance constante, gain du canal
-        let angle = (self.pan + 1.0) * PI / 4.0;
-        let (gg, gd) = (angle.cos() * std::f32::consts::SQRT_2 * self.gain, angle.sin() * std::f32::consts::SQRT_2 * self.gain);
-        for i in 0..gauche.len() {
-            let m = gauche[i];
-            gauche[i] = m * gg;
-            droite[i] = m * gd;
         }
     }
 }
@@ -450,6 +455,19 @@ mod tests {
         let g = rendre(&mut s, 1.0);
         assert!(efficace(&g[(0.8 * FE as f32) as usize..]) < 1e-5);
         assert_eq!(s.voix(), 0);
+    }
+
+    #[test]
+    fn panoramique_et_hauteur_propres_a_la_note() {
+        let mut s = Soustractif::new(FE);
+        s.regler(5, false, 0.8, 0.0); // sinus pur
+        s.note_on_expressive(69, 100, -1.0, 1.0);
+        let (mut g, mut d) = (vec![0.0f32; 22050], vec![0.0f32; 22050]);
+        s.rendre(&mut g, &mut d);
+        let efficace = |x: &[f32]| (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt();
+        assert!(efficace(&d[4410..]) < 1e-4 && efficace(&g[4410..]) > 0.01, "tout à gauche");
+        let passages = g[4410..].windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count() as f32 / ((22050 - 4410) as f32 / FE as f32);
+        assert!((passages - 466.16).abs() < 6.0, "un demi-ton au-dessus du la : {passages} Hz");
     }
 
     #[test]

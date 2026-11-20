@@ -123,7 +123,7 @@ mod tests {
         definir_pas(&mut p, &a, 4, None);
         // un deuxième pattern avec des notes du canal
         let mut deuxieme = creer_pattern("Pattern 2", 384);
-        deuxieme.notes.insert(a.clone(), vec![NoteMusicale { tic: 48, duree: 22, hauteur: 36, velocite: 70 }]);
+        deuxieme.notes.insert(a.clone(), vec![NoteMusicale { tic: 48, duree: 22, hauteur: 36, velocite: 70, ..Default::default() }]);
         p.patterns.push(deuxieme);
         p.canal_mut(&a).unwrap().volume = 0.5;
         p.canal_mut(&a).unwrap().solo = true;

@@ -32,6 +32,8 @@ const SILENCE: f32 = 1e-6;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Message {
     NoteOn { hauteur: u8, velocite: u8 },
+    /// Note avec panoramique (-100 à 100) et réglage fin (cents) qui lui sont propres.
+    NoteOnExpressive { hauteur: u8, velocite: u8, pan: i8, cents: i16 },
     NoteOff { hauteur: u8 },
 }
 
@@ -437,6 +439,10 @@ impl Noyau {
             Message::NoteOn { hauteur, velocite } => {
                 canal.reveiller();
                 canal.source().note_on(hauteur, velocite);
+            }
+            Message::NoteOnExpressive { hauteur, velocite, pan, cents } => {
+                canal.reveiller();
+                canal.source().note_on_expressive(hauteur, velocite, pan as f32 / 100.0, cents as f32 / 100.0);
             }
             Message::NoteOff { hauteur } => canal.source().note_off(hauteur),
         }
