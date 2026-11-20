@@ -215,7 +215,9 @@ fn clavier_de_l_ordinateur_octaves_et_disposition() {
     h.event(egui::Event::WindowFocused(false));
     h.step();
     assert!(h.state().notes_en_direct(&id).is_empty());
-    // pendant une saisie de texte, les lettres écrivent au lieu de jouer
+    // pendant une saisie de texte (renommer un canal), les lettres écrivent au lieu de jouer
+    h.state_mut().renommage = Some((id.clone(), "Piano".into()));
+    h.run_steps(2);
     let champ = h.get(egui_kittest::kittest::by().role(egui::accesskit::Role::TextInput));
     champ.focus();
     h.step();

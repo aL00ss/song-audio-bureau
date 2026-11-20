@@ -17,9 +17,8 @@ use projet::temps::{formater_position, formater_secondes, tics_en_secondes};
 use projet::{Projet, SourceCanal};
 
 use crate::coquille::{self, Panneau, Vue};
-use crate::navigateur::{BitMidi, EtatRecherche, Navigateur, Reseau};
+use crate::navigateur::Navigateur;
 use projet::morceaux::{Morceau, lire_catalogue, nom_court};
-use projet::recherche::formater_ecoutes;
 use crate::{pont, theme};
 use egui_dock::{DockArea, DockState};
 
@@ -90,11 +89,6 @@ pub struct Studio {
 impl Studio {
     /// Démarre le moteur (sortie audio, ou horloge silencieuse sans carte son) avec la banque.
     pub fn new(banque: Option<Arc<SoundFont>>) -> Self {
-        Self::avec_reseau(banque, Arc::new(BitMidi::default()))
-    }
-
-    /// Avec un accès au réseau choisi (les tests en donnent un faux).
-    pub fn avec_reseau(banque: Option<Arc<SoundFont>>, reseau: Arc<dyn Reseau>) -> Self {
         let (moteur, message) = match banque.map(Moteur::demarrer) {
             Some(Ok(m)) => {
                 let message = m.sortie().is_none().then(|| "Aucune sortie audio détectée : branchez un casque ou des enceintes, puis relancez song-audio.".to_string());
@@ -116,7 +110,7 @@ impl Studio {
             moteur,
             envoye: None,
             dock: Some(coquille::disposition_par_defaut()),
-            navigateur: Navigateur::new(reseau, catalogue_des_morceaux()),
+            navigateur: Navigateur::new(catalogue_des_morceaux()),
             peinture: None,
             colonnes_pas: Vec::new(),
             renommage: None,
@@ -179,23 +173,6 @@ impl Studio {
                 self.importer_midi(&octets, &titre, false);
             }
             Err(e) => self.message = Some(format!("Fichier illisible : {nom} ({e})")),
-        }
-    }
-
-    /// Relève les recherches et téléchargements finis (appelé à chaque image).
-    pub fn interroger_navigateur(&mut self, ctx: Option<&egui::Context>) {
-        if self.navigateur.avancer(ctx) {
-            if let Some(c) = ctx {
-                c.request_repaint_after(std::time::Duration::from_millis(60));
-            }
-        }
-        for (nom, resultat) in self.navigateur.relever() {
-            match resultat {
-                Ok(octets) => {
-                    self.importer_midi(&octets, &nom, true);
-                }
-                Err(_) => self.message = Some(format!("Impossible de charger « {nom} » (fichier introuvable ou illisible).")),
-            }
         }
     }
 
@@ -493,53 +470,15 @@ impl Studio {
         });
     }
 
-    /// Le panneau Navigateur : recherche en ligne, morceaux, fichiers, instruments.
+    /// Le panneau Navigateur : morceaux, fichiers, instruments.
     pub fn navigateur(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            self.recherche_en_ligne(ui, &ctx);
-            ui.add_space(8.0);
             self.morceaux(ui);
             ui.add_space(8.0);
             self.fichiers(ui);
             ui.add_space(8.0);
             self.instruments(ui);
         });
-    }
-
-    fn recherche_en_ligne(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.label(RichText::new("RECHERCHER EN LIGNE").small().strong().color(theme::DISCRET));
-        let champ = egui::TextEdit::singleline(&mut self.navigateur.requete).hint_text("Chopin, Daft Punk, Gymnopédie…").desired_width(f32::INFINITY);
-        if ui.add(champ).on_hover_text("Rechercher un fichier MIDI en ligne").changed() {
-            self.navigateur.requete_changee();
-        }
-        let requete = self.navigateur.requete.trim().to_string();
-        match self.navigateur.recherche.clone() {
-            EtatRecherche::Repos => {}
-            EtatRecherche::EnCours => {
-                ui.label(RichText::new("Recherche…").color(theme::DISCRET));
-            }
-            EtatRecherche::Erreur => {
-                ui.label(RichText::new("Recherche indisponible : vérifiez la connexion.").color(theme::ACCENT));
-            }
-            EtatRecherche::Resultats(r) if r.is_empty() => {
-                ui.label(RichText::new(format!("Aucun fichier trouvé pour « {requete} ».")).color(theme::DISCRET));
-            }
-            EtatRecherche::Resultats(resultats) => {
-                let occupe = self.navigateur.en_chargement.is_some();
-                for r in &resultats {
-                    ui.horizontal(|ui| {
-                        let en_cours = self.navigateur.en_chargement.as_deref() == Some(r.titre.as_str());
-                        let bouton = egui::Button::new(RichText::new(format!("{} {}", if en_cours { "…" } else { "⏵" }, r.titre))).frame(false);
-                        if ui.add_enabled(!occupe, bouton).on_hover_text(format!("{} — charger et jouer", r.nom_fichier)).clicked() {
-                            self.navigateur.telecharger(r, Some(ctx));
-                        }
-                        ui.label(RichText::new(formater_ecoutes(r.ecoutes)).small().color(theme::DISCRET));
-                    });
-                }
-            }
-        }
-        ui.label(RichText::new("Fichiers de BitMidi : chaque piste garde son instrument.").small().color(theme::DISCRET));
     }
 
     fn morceaux(&mut self, ui: &mut egui::Ui) {
@@ -670,7 +609,6 @@ impl eframe::App for Studio {
         self.lire_clavier(&ctx, fleches_libres);
         let secondes = ctx.input(|i| i.stable_dt).min(0.1);
         self.lire_mesures(secondes);
-        self.interroger_navigateur(Some(&ctx));
         // fichiers glissés sur la fenêtre : projet ou MIDI
         let deposes: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|c| c.is_absolute()).collect());
         for chemin in deposes {

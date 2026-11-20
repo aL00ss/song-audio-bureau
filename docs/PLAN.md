@@ -75,13 +75,13 @@ passent par egui_kittest.
 |---|---|---|---|
 | N0 | Fondations natives | Espace de travail, crate `projet` (modèle, temps, General MIDI, sérialisation compatible, démo, modèles), application egui : fenêtre, thème, barre de transport (lecture, arrêt, tempo, position, métronome), son par le moteur sans intermédiaire | Projet web relu à l'identique ; clic sur Lecture → le moteur joue |
 | N1 | Coquille | Panneaux ancrables (egui_dock) : navigateur, rack, piano roll, arrangement, mixer, instrument ; raccourcis ; disposition gardée | Tests egui_kittest de chaque panneau |
-| N2 | Navigateur | Recherche en ligne de fichiers MIDI, morceaux, import MIDI, instruments et synthés intégrés | Recherche et import |
+| N2 | Navigateur | Morceaux, fichiers du disque, import MIDI, instruments et synthés intégrés | Import |
 | N3 | Séquenceur pas à pas | Grille, peinture, vélocités, swing, longueur, sons de batterie | Tests du séquenceur |
 | N4 | Piano roll et vue d'instrument | Édition complète des notes (dessin GPU), clavier jouable, enregistrement | Tests d'édition |
 | N5 | Mixer | Tranches, égaliseur, faders, solo, vumètres, routage | Mesures des pistes |
 | N6 | Arrangement | Patterns, clips, mode morceau | Tests d'arrangement |
-| N7 | Vues avancées | Manche (doigté), cordes, harpe, pistons | Tests des doigtés |
-| N8 | Fichiers et orchestre | Ouvrir, enregistrer, exporter MIDI et WAV, annuler/rétablir, jouer avec l'orchestre | Tests de fichiers |
+| N7 | (retirée) | Les vues manche, harpe et pistons n'existent pas dans FL Studio : retirées du plan | — |
+| N8 | Fichiers | Ouvrir, enregistrer, exporter MIDI et WAV, annuler/rétablir | Tests de fichiers |
 | N9 | Bascule | Parité atteinte : retrait de Tauri et de l'interface web du dépôt, installeur natif | L'installeur natif remplace l'ancien |
 
 ### Avancement de la reconstruction native
@@ -206,6 +206,15 @@ passent par egui_kittest.
   sans limite : seul le visible est dessiné (5 000 clips sur 500 pistes : 0,9 ms par image).
   Rack : liste du pattern édité et « + Pattern ». 4 tests `playlist`, 4 tests d'interface de
   l'arrangement (dont la lecture depuis la mesure cliquée, avec le vrai moteur).
+- [x] **Retrait des fonctions absentes de FL Studio** (demande du 20 novembre 2026 : l'application
+  n'a que des fonctions que FL Studio a aussi) : la recherche de fichiers MIDI en ligne
+  (BitMidi) est retirée de l'application native (code, module `recherche`, dépendances réseau
+  `ureq` et `serde_json` du studio, tests) ; « jouer avec l'orchestre » et les vues d'instruments
+  pédagogiques (manche, harpe, pistons) sont retirés du plan (la phase N7 disparaît). Restent,
+  parce que FL Studio les a : les morceaux fournis (projets de démonstration), les pads de
+  batterie (FPC), le clavier de l'ordinateur comme piano, la future bibliothèque de sons en
+  ligne (FL Cloud Sounds). L'ancienne application Tauri garde ces fonctions jusqu'à son retrait
+  (N9).
 
 ## Phases
 

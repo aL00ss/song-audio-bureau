@@ -102,7 +102,6 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Base de greffons et de préréglages | Plugin database | Base des instruments et effets | ⬜ | M, N |
 | Bibliothèque de sons en ligne | FL Cloud Sounds (2 millions de sons) | Banques libres téléchargées (CC0, CC BY) | ⛔ → banques libres | D |
 | Trouver des sons semblables | Find similar samples (2025.2) | Recherche par ressemblance (analyse locale) | ⬜ | N |
-| Recherche de morceaux MIDI en ligne | — | Recherche BitMidi | ✅ | N2 |
 | Instruments et synthés intégrés à ajouter | Add channel | Liste des instruments et synthés | ✅ | N0 |
 | Démarrage par boucles assorties | Loop Starter | Démarreur d'idées (boucles et sons assortis, banques libres) | ⬜ | N |
 | Remixer un morceau (séparation en pistes) | Remix a Song (2026) | Remix : séparation en pistes dans l'arrangement | ⬜ | L |
@@ -337,8 +336,6 @@ Chaque instrument de FL Studio, sa fonction, et son équivalent prévu (nom à n
 | Basse automatique | Bassline generator | Basse automatique | ⬜ | F |
 | Démarreur d'idées | Loop Starter | Démarreur d'idées | ⬜ | N |
 | Assistant qui agit dans le projet | Gopher (2026) | Assistant | ⬜ | O |
-| Jouer avec l'orchestre (sa partie se tait, on la joue) | — (propre à song-audio) | Jouer la partie | 🌐 | N8 |
-| Vues d'instruments (manche, harpe, pistons) | — (propre à song-audio) | Vues avancées | 🌐 | N7 |
 
 ## 17. Performance et robustesse
 
@@ -354,6 +351,10 @@ Chaque instrument de FL Studio, sa fonction, et son équivalent prévu (nom à n
 
 ## 18. Ce que song-audio fera en plus
 
+Seulement des engagements techniques : l'application n'a aucune fonction que FL Studio n'a pas.
+Retirées pour cette raison (novembre 2026) : la recherche de fichiers MIDI en ligne (BitMidi),
+« jouer avec l'orchestre » et les vues d'instruments pédagogiques (manche, harpe, pistons).
+
 | Fonction | Pourquoi |
 |---|---|
 | Aucune limite (canaux, pistes, effets) | FL Studio plafonne (500 pistes de mixage) |
@@ -361,7 +362,6 @@ Chaque instrument de FL Studio, sa fonction, et son équivalent prévu (nom à n
 | Version web gratuite, même format de projet | Ouvrir un projet partout |
 | Greffons isolés | Un greffon qui plante ne coupe pas le son |
 | Libre (GPL-3) et sans abonnement | Tout est inclus |
-| Jouer avec l'orchestre, vues d'instruments pédagogiques | Apprendre en jouant |
 
 ## Sources
 
