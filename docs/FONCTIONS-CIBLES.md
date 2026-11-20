@@ -220,7 +220,7 @@ Chaque instrument de FL Studio, sa fonction, et son équivalent prévu (nom à n
 | SoundFont Player (2026) | Banques SF2 | Lecteur SoundFont | ✅ | A |
 | FPC | Pads de batterie, couches par pad (2026) | Pads de batterie | 🟡 (pads) | N4, J |
 | Fruity Slicer, Slicex, Fruity Slicer 2 (2025.2) | Découpe de boucles | Découpeur de boucles | ⬜ | L |
-| FL Keys | Piano | Piano échantillonné (Salamander) | 🌐 | D |
+| FL Keys | Piano | Piano échantillonné (Salamander, allégé) | 🟡 | D |
 | FLEX (refait en 2026) | Lecteur de préréglages | Lecteur de préréglages par style | ⬜ | J |
 | 3x Osc | Soustractif simple | Synthé soustractif | ✅ (6 sons) | J |
 | Sytrus | FM, additive, RM | Synthé FM 6 opérateurs | ⬜ | J |
@@ -239,7 +239,7 @@ Chaque instrument de FL Studio, sa fonction, et son équivalent prévu (nom à n
 | MIDI Out | Pilotage d'appareils MIDI | Sortie MIDI | ⬜ | K |
 | Mobile Rack (2025) | Instruments de FL Mobile | — (nos instruments) | ⛔ | — |
 | Greffons VST2/VST3/CLAP/AU | Instruments tiers | Accueil CLAP, VST3 (processus séparé) | ⬜ | M |
-| Orchestre | (greffons tiers) | Banques VSCO 2, VCSL, Iowa | 🌐 (VSCO allégé) | D |
+| Orchestre | (greffons tiers) | Banques VSCO 2, VCSL, Iowa | 🟡 (VSCO allégé) | D |
 | Synthé de basse « 808 » | (préréglages) | Basse 808 à glissando | ⬜ | J |
 
 ## 11. Effets

@@ -150,3 +150,36 @@ fn deux_cent_cinquante_instruments_qui_jouent_ensemble() {
     h.get_by_label("Stop").click();
     h.step();
 }
+
+#[test]
+fn les_sons_se_chargent_en_arriere_plan_et_les_credits_s_affichent() {
+    let mut h = Harness::builder().with_size([1400.0, 800.0]).build_eframe(|cc| {
+        studio::app::appliquer_theme(&cc.egui_ctx);
+        Studio::depuis_disque()
+    });
+    h.step();
+    // la fenêtre est là tout de suite ; le moteur démarre quand la banque est prête
+    assert!(h.state().moteur().is_none());
+    assert_eq!(h.state().message.as_deref(), Some("Chargement des sons…"));
+    let fin = Instant::now() + Duration::from_secs(20);
+    while h.state().moteur().is_none() {
+        assert!(Instant::now() < fin, "la banque devrait être chargée");
+        std::thread::sleep(Duration::from_millis(20));
+        h.step();
+    }
+    assert_eq!(h.state().banques_chargees.len(), 4, "piano et orchestre plus fidèles : {:?}", h.state().banques_chargees);
+    // le piano de la démo joue avec la banque enrichie
+    h.get_by_label("Lecture").click();
+    h.step();
+    attendre_etat(&mut h, EtatTransport::Lecture);
+    h.get_by_label("Stop").click();
+    h.step();
+    // Aide > Crédits des sons
+    h.get_by_label("Aide").click();
+    h.run_steps(2);
+    h.get_by_label("Crédits des sons…").click();
+    h.run_steps(2);
+    assert!(h.query_by_label_contains("Salamander Grand Piano").is_some());
+    assert!(h.query_by_label_contains("CC BY 3.0").is_some());
+    assert!(h.query_all_by_label_contains("VSCO 2").count() >= 2, "la banque et la liste des banques chargées");
+}

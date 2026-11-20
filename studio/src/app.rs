@@ -91,11 +91,23 @@ pub struct Studio {
     pub fichiers: crate::fichiers::EtatFichiers,
     /// Banque General MIDI (gardée pour les exports WAV).
     banque: Option<Arc<SoundFont>>,
+    /// Banque en cours de chargement (au démarrage de l'application).
+    chargement_banque: Option<std::sync::mpsc::Receiver<Result<(Arc<SoundFont>, Vec<String>), String>>>,
+    /// Banques plus fidèles chargées en plus de la General MIDI.
+    pub banques_chargees: Vec<String>,
+    pub credits_ouverts: bool,
 }
 
 impl Studio {
     /// Démarre le moteur (sortie audio, ou horloge silencieuse sans carte son) avec la banque.
     pub fn new(banque: Option<Arc<SoundFont>>) -> Self {
+        let mut studio = Self::sans_moteur();
+        studio.demarrer_moteur(banque);
+        studio
+    }
+
+    /// Démarre le moteur avec la banque (sortie audio, ou horloge silencieuse sans carte son).
+    pub fn demarrer_moteur(&mut self, banque: Option<Arc<SoundFont>>) {
         let (moteur, message) = match banque.clone().map(Moteur::demarrer) {
             Some(Ok(m)) => {
                 let message = m.sortie().is_none().then(|| "Aucune sortie audio détectée : branchez un casque ou des enceintes, puis relancez song-audio.".to_string());
@@ -104,6 +116,15 @@ impl Studio {
             Some(Err(e)) => (None, Some(format!("Le son n'a pas pu démarrer : {e}"))),
             None => (None, Some("Banque de sons introuvable (banques/GeneralUser-GS.sf2).".to_string())),
         };
+        self.moteur = moteur;
+        self.message = message;
+        self.banque = banque;
+        self.envoye = None; // tout le projet part vers le nouveau moteur
+    }
+
+    fn sans_moteur() -> Self {
+        let (moteur, message): (Option<Moteur>, Option<String>) = (None, None);
+        let banque: Option<Arc<SoundFont>> = None;
         let projet = projet::demo::creer_demo();
         let canal_selectionne = projet.canaux.first().map(|c| c.id.clone());
         Studio {
@@ -131,6 +152,9 @@ impl Studio {
             arrangement: Default::default(),
             fichiers: Default::default(),
             banque,
+            chargement_banque: None,
+            banques_chargees: Vec::new(),
+            credits_ouverts: false,
         }
     }
 
@@ -215,9 +239,45 @@ impl Studio {
         self.dock = Some(coquille::disposition_par_defaut());
     }
 
+    /// L'application réelle : la fenêtre s'ouvre tout de suite ; la banque General MIDI, enrichie
+    /// des banques plus fidèles (piano, orchestre), se charge dans un fil à part, puis le moteur
+    /// démarre.
     pub fn depuis_disque() -> Self {
-        let banque = chemin_banque().and_then(|c| moteur::charger_banque(&c).ok());
-        Self::new(banque)
+        let mut studio = Self::sans_moteur();
+        studio.message = Some("Chargement des sons…".into());
+        let (envoi, reception) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let resultat = match chemin_banque() {
+                None => Err("Banque de sons introuvable (banques/GeneralUser-GS.sf2).".to_string()),
+                Some(gm) => {
+                    let sons = chemin_ressource("sons");
+                    moteur::banques::charger_banque_enrichie(&gm, sons.as_deref())
+                        .map(|(b, noms)| (b, noms.iter().map(|n| n.to_string()).collect()))
+                        // une banque supplémentaire abîmée ne doit pas priver de son : la GM seule
+                        .or_else(|_| moteur::charger_banque(&gm).map(|b| (b, Vec::new())))
+                }
+            };
+            let _ = envoi.send(resultat);
+        });
+        studio.chargement_banque = Some(reception);
+        studio
+    }
+
+    /// Démarre le moteur quand la banque est prête (appelé à chaque image).
+    pub fn relever_chargement(&mut self) {
+        let Some(r) = &self.chargement_banque else { return };
+        match r.try_recv() {
+            Ok(Ok((banque, noms))) => {
+                self.chargement_banque = None;
+                self.banques_chargees = noms;
+                self.demarrer_moteur(Some(banque));
+            }
+            Ok(Err(e)) => {
+                self.chargement_banque = None;
+                self.message = Some(e);
+            }
+            Err(_) => {}
+        }
     }
 
     pub fn banque(&self) -> Option<Arc<SoundFont>> {
@@ -414,6 +474,12 @@ impl Studio {
             ui.separator();
             ui.menu_button("Fichier", |ui| self.menu_fichier(ui));
             ui.menu_button("Édition", |ui| self.menu_edition(ui));
+            ui.menu_button("Aide", |ui| {
+                if ui.button("Crédits des sons…").clicked() {
+                    self.credits_ouverts = true;
+                    ui.close();
+                }
+            });
             ui.separator();
             let lecture = self.etat_transport() == EtatTransport::Lecture;
             let bouton_lecture = egui::Button::new(RichText::new(if lecture { "Pause" } else { "Lecture" }).strong().color(Color32::BLACK))
@@ -600,6 +666,10 @@ impl eframe::App for Studio {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.relever_chargement();
+        if self.chargement_banque.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
         self.raccourcis(&ctx);
         // ← → : octave du clavier, sauf quand le piano roll a le focus (il déplace ses notes)
         let fleches_libres = !self.piano_roll.a_le_focus(&ctx);
@@ -660,6 +730,7 @@ impl eframe::App for Studio {
             }
         });
         self.fiche_du_projet(&ctx);
+        self.credits(&ctx);
         self.relever_export();
         // fermer la fenêtre avec des modifications : on demande d'abord
         if ctx.input(|i| i.viewport().close_requested()) && self.modifie && !self.fichiers.fermeture_permise {
@@ -685,4 +756,56 @@ impl eframe::App for Studio {
 
 pub fn appliquer_theme(ctx: &egui::Context) {
     theme::appliquer(ctx);
+}
+
+impl Studio {
+    /// Les sons et les morceaux fournis, leurs auteurs et leurs licences.
+    pub fn credits(&mut self, ctx: &egui::Context) {
+        if !self.credits_ouverts {
+            return;
+        }
+        let mut ouverte = true;
+        let morceaux = self.navigateur.morceaux.clone();
+        let chargees = self.banques_chargees.clone();
+        egui::Window::new("Crédits des sons").open(&mut ouverte).default_width(520.0).show(ctx, |ui| {
+            egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+                ui.label(RichText::new("Banques de sons").strong());
+                let banque = |ui: &mut egui::Ui, nom: &str, auteur: &str, licence: &str, note: &str| {
+                    ui.label(RichText::new(nom).color(theme::ACCENT));
+                    ui.label(format!("{auteur} — {licence}"));
+                    if !note.is_empty() {
+                        ui.label(RichText::new(note).small().color(theme::DISCRET));
+                    }
+                    ui.add_space(4.0);
+                };
+                banque(ui, "GeneralUser GS v2.0.3", "S. Christian Collins", "utilisation libre, logiciels compris", "Les 128 instruments General MIDI et les batteries.");
+                banque(
+                    ui,
+                    "Salamander Grand Piano V3",
+                    "Alexander Holm (Yamaha C5)",
+                    "CC BY 3.0 (creativecommons.org/licenses/by/3.0)",
+                    "Allégé pour song-audio : 5 couches de vélocité sur 16, échantillons raccourcis. Source : freepats.zenvoid.org",
+                );
+                banque(
+                    ui,
+                    "VSCO 2 Community Edition",
+                    "Versilian Studios (Sam Gossner et les contributeurs)",
+                    "CC0 1.0 (domaine public)",
+                    "Cordes, cuivres et bois, deux nuances par note. Source : github.com/sgossner/VSCO-2-CE",
+                );
+                if !chargees.is_empty() {
+                    ui.label(RichText::new(format!("Chargées : {}", chargees.join(", "))).small().color(theme::DISCRET));
+                }
+                ui.separator();
+                ui.label(RichText::new("Morceaux fournis").strong());
+                for m in &morceaux {
+                    ui.label(format!("{} — {} ({}), {}", m.titre, m.compositeur, m.annee, m.licence));
+                    ui.label(RichText::new(&m.credit).small().color(theme::DISCRET));
+                }
+                ui.separator();
+                ui.label(RichText::new("song-audio est un logiciel libre (GPL-3.0).").small().color(theme::DISCRET));
+            });
+        });
+        self.credits_ouverts = ouverte;
+    }
 }

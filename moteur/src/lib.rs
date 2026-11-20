@@ -2,6 +2,7 @@
 //! rendu hors ligne. Bibliothèque indépendante de l'interface, testée par `cargo test`.
 
 pub mod ateliers;
+pub mod banques;
 pub mod effets;
 pub mod noyau;
 mod performance;

@@ -249,6 +249,24 @@ passent par egui_kittest.
 La reconstruction native est terminée. Suite : les phases D à O ci-dessous, vers
 [FONCTIONS-CIBLES.md](FONCTIONS-CIBLES.md).
 
+### Avancement des phases D à O
+
+- [x] **D1 — Banques plus fidèles dans le moteur** : lecture brute des banques SoundFont,
+  décompression des SoundFont 3 (échantillons Ogg Vorbis, décodés par `lewton` sur tous les
+  cœurs, chaque fil prenant l'échantillon suivant dès qu'il est libre) et fusion dans la banque
+  General MIDI : le piano à queue (Salamander, programme 0), les cordes, les cuivres et les bois
+  (VSCO 2 CE, programmes 40 à 49, 56 à 60, 68 à 73) remplacent ceux de GeneralUser GS, tout le
+  reste (et la batterie) est inchangé, comme dans la version web ; le moteur joue toujours une
+  seule banque. Chargement au démarrage dans un fil à part (0,7 s ; la fenêtre s'ouvre tout de
+  suite avec « Chargement des sons… », le moteur démarre quand la banque est prête ; une banque
+  supplémentaire abîmée laisse la GM seule). Mémoire : 560 Mo une fois chargé (pic de 980 Mo
+  pendant la fusion) ; la lecture depuis le disque viendra avec les grandes banques (D2).
+  Fenêtre « Aide > Crédits des sons » (auteurs, licences, modifications, morceaux) ; les
+  banques et leurs licences sont installées avec l'application. Tests : la banque GM réécrite
+  donne exactement le même son que l'originale ; après fusion, le piano et le violon changent
+  de son, la basse et la batterie non ; fichiers refusés ; chargement en arrière-plan et
+  crédits dans l'interface.
+
 ## Phases
 
 | # | Phase | Contenu | Vérification |

@@ -46,6 +46,7 @@ icons = [
 resources = [
   { src = "../ressources/banques", target = "banques" },
   { src = "../ressources/morceaux", target = "morceaux" },
+  { src = "../ressources/sons", target = "sons" },
 ]
 
 [package.metadata.packager.deb]
