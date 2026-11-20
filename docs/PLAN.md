@@ -306,6 +306,14 @@ La reconstruction native est terminée. Suite : les phases D à O ci-dessous, ve
   la main avec RESEAU=1), 1 du catalogue, 2 du lecteur SFZ. Pas encore pris en compte : filtres,
   égaliseurs et LFO des fichiers SFZ, contrôleurs MIDI en temps réel, lecture depuis le disque
   pour les très grandes banques (Salamander complet, VSCO 2 complet : plusieurs Go en mémoire).
+- [x] **E1 — Outils de pas, swing par canal, groupes** : menu « Pas » de chaque canal en mode pas :
+  remplir tous les 2, 4 ou 8 pas, décaler d'un pas vers la gauche ou la droite (le pas qui sort
+  revient de l'autre côté), inverser, au hasard (motif reproductible pour une même graine,
+  vélocités variées), effacer ; un canal aux notes libres n'est jamais touché. Swing par canal
+  (part du swing global, de 0 à 100 %). Groupes de canaux (menu « Groupe » : aucun, existants,
+  nouveau) et filtre du rack par groupe ; un canal filtré garde son rang réel (moteur, témoins).
+  Les deux champs ne sont écrits dans le fichier que s'ils diffèrent de la valeur par défaut.
+  3 tests du modèle, 1 test d'interface.
 
 ## Phases
 

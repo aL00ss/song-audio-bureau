@@ -315,3 +315,58 @@ fn supprimer_et_deplacer_pendant_la_lecture() {
     h.get_by_label("Stop").click();
     h.step();
 }
+
+/// Ouvre le menu d'un canal, passe sur un sous-menu, choisit une entrée.
+fn sous_menu(h: &mut Harness<'static, Studio>, nom: &str, sous: &str, entree: &str) {
+    canal(h, nom).click_secondary();
+    h.run_steps(2);
+    h.get_by_label(&format!("{sous} ⏵")).hover();
+    h.run_steps(2);
+    h.query_all_by_label(entree).last().unwrap_or_else(|| panic!("{entree} introuvable")).click();
+    h.run_steps(2);
+}
+
+#[test]
+fn outils_de_pas_groupes_et_swing_du_canal() {
+    let mut h = studio();
+    let actifs = |h: &Harness<'static, Studio>, c: usize| pas(h, c).iter().map(|v| u8::from(*v > 0)).collect::<Vec<_>>();
+    sous_menu(&mut h, "Grosse caisse", "Pas", "Remplir tous les 4 pas");
+    assert_eq!(actifs(&h, 0), vec![1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
+    sous_menu(&mut h, "Grosse caisse", "Pas", "Décaler vers la droite");
+    assert_eq!(actifs(&h, 0)[0..2], [0, 1]);
+    sous_menu(&mut h, "Grosse caisse", "Pas", "Effacer");
+    assert_eq!(actifs(&h, 0), vec![0; 16]);
+    // un groupe tout neuf, puis le filtre du rack
+    canal(&h, "Clap").click_secondary();
+    h.run_steps(2);
+    h.get_by_label("Groupe ⏵").hover();
+    h.run_steps(2);
+    let champ = h.get(by().role(Role::TextInput));
+    champ.focus();
+    champ.type_text("Mains");
+    h.step();
+    h.query_all_by_label("+").last().unwrap().click();
+    h.run_steps(2);
+    assert_eq!(h.state().projet.canaux[1].groupe.as_deref(), Some("Mains"));
+    h.state_mut().filtre_groupe = studio::rack::FiltreGroupe::Groupe("Mains".into());
+    h.run_steps(2);
+    assert!(h.query_by_label("Pas 1 Clap").is_some());
+    assert!(h.query_by_label("Pas 1 Grosse caisse").is_none(), "le filtre cache les autres groupes");
+    // le pas d'un canal filtré garde son vrai rang (moteur, témoins)
+    h.get_by_label("Pas 3 Clap").click();
+    h.step();
+    assert_eq!(pas(&h, 1)[2], 100);
+    h.state_mut().filtre_groupe = studio::rack::FiltreGroupe::Tous;
+    h.run_steps(2);
+    // swing du canal
+    canal(&h, "Clap").click_secondary();
+    h.run_steps(2);
+    h.get_by_label("Swing du canal ⏵").hover();
+    h.run_steps(2);
+    let curseur = h.get_by_label("Swing de Clap");
+    curseur.focus();
+    h.step();
+    h.key_press(egui::Key::ArrowLeft);
+    h.run_steps(2);
+    assert!(h.state().projet.canaux[1].swing < 1.0, "swing {}", h.state().projet.canaux[1].swing);
+}

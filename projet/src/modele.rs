@@ -63,6 +63,20 @@ pub struct Canal {
     /// version web).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instrument: Option<String>,
+    /// Part du swing global que suit ce canal (1 = tout, 0 = aucun).
+    #[serde(default = "un", skip_serializing_if = "est_un")]
+    pub swing: f32,
+    /// Groupe du canal, pour filtrer le rack (absent : sans groupe).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub groupe: Option<String>,
+}
+
+fn un() -> f32 {
+    1.0
+}
+
+fn est_un(v: &f32) -> bool {
+    *v == 1.0
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -242,6 +256,8 @@ impl Projet {
             note_defaut: options.note_defaut.unwrap_or(if options.batterie { NOTE_DEFAUT_BATTERIE } else { NOTE_DEFAUT_MELODIQUE }),
             source,
             instrument: options.instrument,
+            swing: 1.0,
+            groupe: None,
         });
         id
     }

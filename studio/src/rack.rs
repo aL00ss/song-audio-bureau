@@ -32,6 +32,41 @@ pub struct Peinture {
     pub actif: bool,
 }
 
+/// Canaux montrés par le rack.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum FiltreGroupe {
+    #[default]
+    Tous,
+    SansGroupe,
+    Groupe(String),
+}
+
+impl FiltreGroupe {
+    pub fn garde(&self, canal: &projet::Canal) -> bool {
+        match self {
+            FiltreGroupe::Tous => true,
+            FiltreGroupe::SansGroupe => canal.groupe.is_none(),
+            FiltreGroupe::Groupe(g) => canal.groupe.as_deref() == Some(g.as_str()),
+        }
+    }
+
+    pub fn nom(&self) -> String {
+        match self {
+            FiltreGroupe::Tous => "Tous".into(),
+            FiltreGroupe::SansGroupe => "Sans groupe".into(),
+            FiltreGroupe::Groupe(g) => g.clone(),
+        }
+    }
+}
+
+/// Groupes utilisés dans le projet, par ordre alphabétique.
+pub fn groupes(projet: &projet::Projet) -> Vec<String> {
+    let mut g: Vec<String> = projet.canaux.iter().filter_map(|c| c.groupe.clone()).collect();
+    g.sort();
+    g.dedup();
+    g
+}
+
 impl Studio {
     pub fn rack(&mut self, ui: &mut egui::Ui) {
         let pattern = self.projet.pattern_actif().clone();
@@ -57,6 +92,19 @@ impl Studio {
                 });
             }
             ui.label(RichText::new(format!("{} instruments", self.projet.canaux.len())).color(theme::DISCRET));
+            // filtre de groupe
+            let groupes = groupes(&self.projet);
+            if !groupes.is_empty() || self.filtre_groupe != FiltreGroupe::Tous {
+                let mut filtre = self.filtre_groupe.clone();
+                egui::ComboBox::from_id_salt("filtre de groupe").selected_text(format!("Groupe : {}", filtre.nom())).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut filtre, FiltreGroupe::Tous, "Tous");
+                    for g in &groupes {
+                        ui.selectable_value(&mut filtre, FiltreGroupe::Groupe(g.clone()), g);
+                    }
+                    ui.selectable_value(&mut filtre, FiltreGroupe::SansGroupe, "Sans groupe");
+                });
+                self.filtre_groupe = filtre;
+            }
             ui.separator();
             let mut pas = nb_pas as i64;
             ui.label("Pas");
@@ -80,14 +128,16 @@ impl Studio {
         self.colonnes_pas.clear();
 
         let canaux = self.projet.canaux.clone();
+        let montres: Vec<usize> = (0..canaux.len()).filter(|&r| self.filtre_groupe.garde(&canaux[r])).collect();
         let nb_pistes = self.projet.mixage.len();
         let hauteur_ligne = PAS.y + ui.spacing().item_spacing.y + 2.0;
         let sortie = egui::ScrollArea::both().id_salt("rack").auto_shrink([false, false]).max_height((ui.available_height() - HAUTEUR_VELOCITES - 30.0).max(60.0)).show_rows(
             ui,
             hauteur_ligne,
-            canaux.len(),
+            montres.len(),
             |ui, lignes| {
-                for rang in lignes {
+                for ligne in lignes {
+                    let rang = montres[ligne];
                     let canal = &canaux[rang];
                     let notes = pattern.notes.get(&canal.id).cloned().unwrap_or_default();
                     let en_pas = est_en_mode_pas(&notes, canal.note_defaut);
@@ -263,6 +313,57 @@ impl Studio {
                 }
             });
         }
+        let notes = self.projet.pattern_actif().notes.get(&canal.id).cloned().unwrap_or_default();
+        if est_en_mode_pas(&notes, canal.note_defaut) {
+            // graine du motif au hasard : l'instant (un nouveau motif à chaque fois)
+            let graine = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1);
+            ui.menu_button("Pas", |ui| {
+                let mut faire = |ui: &mut egui::Ui, texte: &str, f: &dyn Fn(&mut projet::Projet)| {
+                    if ui.button(texte).clicked() {
+                        self.modifier(f);
+                        ui.close();
+                    }
+                };
+                faire(ui, "Remplir tous les 2 pas", &|p| projet::pas::remplir_tous_les(p, &id, 2, 0));
+                faire(ui, "Remplir tous les 4 pas", &|p| projet::pas::remplir_tous_les(p, &id, 4, 0));
+                faire(ui, "Remplir tous les 8 pas", &|p| projet::pas::remplir_tous_les(p, &id, 8, 0));
+                ui.separator();
+                faire(ui, "Décaler vers la gauche", &|p| projet::pas::decaler_pas(p, &id, -1));
+                faire(ui, "Décaler vers la droite", &|p| projet::pas::decaler_pas(p, &id, 1));
+                faire(ui, "Inverser", &|p| projet::pas::inverser_pas(p, &id));
+                faire(ui, "Au hasard", &|p| projet::pas::pas_aleatoires(p, &id, 0.35, graine));
+                ui.separator();
+                faire(ui, "Effacer", &|p| projet::pas::effacer_pas(p, &id));
+            });
+        }
+        ui.menu_button("Swing du canal", |ui| {
+            let mut part = (canal.swing * 100.0).round();
+            ui.label(RichText::new("Part du swing global que suit ce canal").small().color(theme::DISCRET));
+            let r = ui.add(egui::Slider::new(&mut part, 0.0..=100.0).suffix(" %").integer());
+            r.widget_info(|| WidgetInfo::slider(true, part as f64, format!("Swing de {}", canal.nom)));
+            if r.changed() {
+                self.modifier(|p| p.canal_mut(&id).iter_mut().for_each(|c| c.swing = part / 100.0));
+            }
+        });
+        ui.menu_button("Groupe", |ui| {
+            let mut choix = canal.groupe.clone();
+            ui.radio_value(&mut choix, None, "Aucun");
+            for g in groupes(&self.projet) {
+                ui.radio_value(&mut choix, Some(g.clone()), g);
+            }
+            ui.horizontal(|ui| {
+                let r = ui.add(egui::TextEdit::singleline(&mut self.nouveau_groupe).hint_text("Nouveau groupe").desired_width(110.0));
+                let valider = ui.small_button("+").clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                if valider && !self.nouveau_groupe.trim().is_empty() {
+                    choix = Some(self.nouveau_groupe.trim().to_string());
+                    self.nouveau_groupe.clear();
+                }
+            });
+            if choix != canal.groupe {
+                self.modifier(|p| p.canal_mut(&id).iter_mut().for_each(|c| c.groupe = choix.clone()));
+                ui.close();
+            }
+        });
         ui.separator();
         if ui.button("Cloner").clicked() {
             let mut copie = None;

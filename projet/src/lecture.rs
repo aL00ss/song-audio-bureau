@@ -38,7 +38,7 @@ pub fn notes_du_pattern(projet: &Projet, pattern: &Pattern) -> Vec<NoteJouee> {
             if n.tic >= pattern.longueur {
                 continue;
             }
-            let decalage = decalage_swing(n.tic, projet.swing);
+            let decalage = decalage_swing(n.tic, projet.swing * canal.swing as f64);
             let debut = (n.tic as f64 + decalage).round() as u32;
             let fin = ((n.tic + n.duree) as f64 + decalage).round().min(pattern.longueur as f64) as u32;
             if debut < fin {

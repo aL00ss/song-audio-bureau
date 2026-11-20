@@ -113,6 +113,14 @@ fn lire_canal(v: &Value, chemin: &str) -> R<Canal> {
             None | Some(Value::Null) => None,
             Some(v) => Some(texte(v, &format!("{chemin}.instrument"))?),
         },
+        swing: match o.get("swing") {
+            None => 1.0,
+            Some(v) => nombre(v, &format!("{chemin}.swing"), 0.0, 1.0)? as f32,
+        },
+        groupe: match o.get("groupe") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(texte(v, &format!("{chemin}.groupe"))?),
+        },
     })
 }
 

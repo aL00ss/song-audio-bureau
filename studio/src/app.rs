@@ -100,6 +100,9 @@ pub struct Studio {
     pub instruments: crate::instruments::EtatInstruments,
     /// Banques de sons en cours de téléchargement.
     pub banques: crate::banques::EtatBanques,
+    /// Canaux montrés par le rack (filtre de groupe), et nom d'un groupe en cours de saisie.
+    pub filtre_groupe: crate::rack::FiltreGroupe,
+    pub nouveau_groupe: String,
 }
 
 impl Studio {
@@ -162,6 +165,8 @@ impl Studio {
             credits_ouverts: false,
             instruments: Default::default(),
             banques: Default::default(),
+            filtre_groupe: Default::default(),
+            nouveau_groupe: String::new(),
         }
     }
 

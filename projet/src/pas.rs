@@ -91,6 +91,78 @@ pub fn definir_note_defaut(projet: &mut Projet, canal_id: &str, hauteur: i32) {
     }
 }
 
+/// Rang des pas actifs d'un canal (dans le pattern actif), s'il est en mode pas.
+fn pas_actifs(projet: &Projet, canal_id: &str) -> Option<(Vec<u8>, u8)> {
+    let canal = projet.canal(canal_id)?;
+    let pattern = projet.pattern_actif();
+    let notes = pattern.notes.get(canal_id).map(Vec::as_slice).unwrap_or(&[]);
+    est_en_mode_pas(notes, canal.note_defaut).then(|| (velocites_des_pas(pattern, canal_id, canal.note_defaut), canal.note_defaut))
+}
+
+/// Réécrit les pas d'un canal d'après leurs vélocités (0 = inactif).
+fn ecrire_pas(projet: &mut Projet, canal_id: &str, velocites: &[u8], note: u8) {
+    let notes: Vec<NoteMusicale> = velocites
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| **v > 0)
+        .map(|(i, v)| NoteMusicale { tic: i as u32 * TICS_PAR_PAS, duree: DUREE_PAS, hauteur: note, velocite: *v })
+        .collect();
+    projet.pattern_actif_mut().notes.insert(canal_id.to_string(), notes);
+}
+
+/// Allume un pas sur `n` à partir du pas `depart` (les autres pas ne changent pas). Sans effet
+/// sur un canal aux notes libres.
+pub fn remplir_tous_les(projet: &mut Projet, canal_id: &str, n: u32, depart: u32) {
+    let Some((mut pas, note)) = pas_actifs(projet, canal_id) else { return };
+    for (i, v) in pas.iter_mut().enumerate() {
+        if n > 0 && i as u32 >= depart && (i as u32 - depart) % n == 0 && *v == 0 {
+            *v = VELOCITE_PAS;
+        }
+    }
+    ecrire_pas(projet, canal_id, &pas, note);
+}
+
+/// Fait tourner les pas d'un cran (positif : vers la droite ; le dernier revient au début).
+pub fn decaler_pas(projet: &mut Projet, canal_id: &str, sens: i32) {
+    let Some((mut pas, note)) = pas_actifs(projet, canal_id) else { return };
+    if pas.is_empty() {
+        return;
+    }
+    let k = sens.rem_euclid(pas.len() as i32) as usize;
+    pas.rotate_right(k);
+    ecrire_pas(projet, canal_id, &pas, note);
+}
+
+/// Allume les pas éteints et éteint les pas allumés.
+pub fn inverser_pas(projet: &mut Projet, canal_id: &str) {
+    let Some((mut pas, note)) = pas_actifs(projet, canal_id) else { return };
+    for v in pas.iter_mut() {
+        *v = if *v > 0 { 0 } else { VELOCITE_PAS };
+    }
+    ecrire_pas(projet, canal_id, &pas, note);
+}
+
+/// Éteint tous les pas du canal.
+pub fn effacer_pas(projet: &mut Projet, canal_id: &str) {
+    let Some((pas, note)) = pas_actifs(projet, canal_id) else { return };
+    ecrire_pas(projet, canal_id, &vec![0; pas.len()], note);
+}
+
+/// Pas au hasard : chaque pas s'allume avec la probabilité `densite`, à une vélocité tirée entre
+/// 70 et 127. La même graine donne le même motif.
+pub fn pas_aleatoires(projet: &mut Projet, canal_id: &str, densite: f32, graine: u64) {
+    let Some((pas, note)) = pas_actifs(projet, canal_id) else { return };
+    let mut etat = graine.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407) | 1;
+    let mut tirer = || {
+        etat ^= etat << 13;
+        etat ^= etat >> 7;
+        etat ^= etat << 17;
+        (etat >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let nouveaux: Vec<u8> = pas.iter().map(|_| if tirer() < densite as f64 { 70 + (tirer() * 57.0) as u8 } else { 0 }).collect();
+    ecrire_pas(projet, canal_id, &nouveaux, note);
+}
+
 /// Swing : les notes d'un pas impair (la 2e double croche de chaque croche) sont retardées, de
 /// la moitié d'un pas à 100 %.
 pub fn decalage_swing(tic: u32, swing: f64) -> f64 {
@@ -227,6 +299,56 @@ mod tests {
         assert_eq!(velocites_des_pas(p.pattern_actif(), &id, 36)[4], 0);
         definir_pas(&mut p, &id, 99, Some(true)); // hors du pattern : ignoré
         assert_eq!(p.pattern_actif().notes[&id].len(), 1);
+    }
+
+    #[test]
+    fn outils_remplir_decaler_inverser_effacer_hasard() {
+        let (mut p, id) = avec_batterie();
+        let v = |p: &Projet| velocites_des_pas(p.pattern_actif(), &id, 36).iter().map(|v| u8::from(*v > 0)).collect::<Vec<_>>();
+        remplir_tous_les(&mut p, &id, 4, 0);
+        assert_eq!(v(&p), vec![1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
+        remplir_tous_les(&mut p, &id, 8, 2);
+        assert_eq!(v(&p), vec![1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0]);
+        decaler_pas(&mut p, &id, 1);
+        assert_eq!(v(&p), vec![0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0]);
+        decaler_pas(&mut p, &id, -2);
+        assert_eq!(v(&p), vec![0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1], "les deux premiers repartent à la fin");
+        inverser_pas(&mut p, &id);
+        assert_eq!(v(&p)[0..4], [1, 0, 1, 0]);
+        effacer_pas(&mut p, &id);
+        assert_eq!(v(&p), vec![0; 16]);
+        pas_aleatoires(&mut p, &id, 0.5, 42);
+        let premier = p.pattern_actif().notes[&id].clone();
+        assert!((3..=13).contains(&premier.len()), "{} pas", premier.len());
+        assert!(premier.iter().all(|n| (70..=127).contains(&n.velocite)));
+        pas_aleatoires(&mut p, &id, 0.5, 42);
+        assert_eq!(p.pattern_actif().notes[&id], premier, "même graine, même motif");
+        pas_aleatoires(&mut p, &id, 0.0, 7);
+        assert!(p.pattern_actif().notes[&id].is_empty());
+        // un canal aux notes libres n'est pas touché
+        let mut demo = crate::demo::creer_demo();
+        let piano = demo.canaux[0].id.clone();
+        let avant = demo.clone();
+        remplir_tous_les(&mut demo, &piano, 2, 0);
+        inverser_pas(&mut demo, &piano);
+        assert_eq!(demo, avant);
+    }
+
+    #[test]
+    fn swing_par_canal() {
+        let (mut p, id) = avec_batterie();
+        definir_pas(&mut p, &id, 1, None);
+        p.swing = 1.0;
+        let debut = |p: &Projet| notes_a_jouer(p, ModeLecture::Pattern).0[0].debut;
+        assert_eq!(debut(&p), 36);
+        p.canal_mut(&id).unwrap().swing = 0.5;
+        assert_eq!(debut(&p), 30, "la moitié du swing global");
+        p.canal_mut(&id).unwrap().swing = 0.0;
+        assert_eq!(debut(&p), 24);
+        let json = crate::serialisation::serialiser(&p);
+        assert_eq!(crate::serialisation::deserialiser(&json).unwrap(), p);
+        p.canal_mut(&id).unwrap().swing = 1.0;
+        assert_eq!(crate::serialisation::serialiser(&p).matches("\"swing\"").count(), 1, "valeur par défaut : seul le swing du projet est écrit");
     }
 
     #[test]
