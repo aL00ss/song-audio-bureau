@@ -37,12 +37,16 @@ pub fn rendre_session(
     banque: &Arc<SoundFont>,
     frequence: u32,
     configuration: &Configuration,
+    instruments: &[(u32, Arc<crate::echantillonneur::InstrumentEchantillons>)],
     session: &Session,
     queue: f64,
 ) -> Result<(Vec<f32>, Vec<f32>), String> {
     let mut noyau = Noyau::new(banque, frequence)?;
     noyau.preparer(configuration)?;
     noyau.configurer(configuration);
+    for (canal, instrument) in instruments {
+        noyau.changer_instrument(*canal, Some(instrument.clone()));
+    }
     let mut transport = Transport::new();
     let mut session = session.clone();
     session.boucler = false;
@@ -121,7 +125,7 @@ mod tests {
             notes: vec![NoteSession { debut: 0, fin: 48, canal: 0, hauteur: 60, velocite: 100 }],
             boucler: true,
         };
-        let (g, _) = rendre_session(&banque(), FE, &configuration(0, false), &session, 1.0).unwrap();
+        let (g, _) = rendre_session(&banque(), FE, &configuration(0, false), &[], &session, 1.0).unwrap();
         assert_eq!(g.len(), 3 * FE as usize);
         let efficace = |x: &[f32]| (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt();
         assert!(efficace(&g[..4410]) > 0.01, "la note au début");

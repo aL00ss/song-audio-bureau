@@ -35,6 +35,8 @@ pub enum SourceCanal {
     Soundfont,
     /// Synthé soustractif intégré ; le programme choisit le préréglage.
     Soustractif,
+    /// Échantillonneur : un instrument SFZ (chemin dans `Canal::instrument`).
+    Echantillons,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -57,6 +59,10 @@ pub struct Canal {
     /// Hauteur des pas du séquenceur : Do central, ou le son de batterie.
     pub note_defaut: u8,
     pub source: SourceCanal,
+    /// Fichier SFZ de l'échantillonneur (absent des autres sources, et des fichiers de la
+    /// version web).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instrument: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -201,6 +207,8 @@ pub struct OptionsCanal {
     pub volume: Option<f32>,
     pub pan: f32,
     pub note_defaut: Option<u8>,
+    /// Fichier SFZ, pour un canal échantillonneur.
+    pub instrument: Option<String>,
 }
 
 /// Nom du son d'un canal mélodique (instrument General MIDI ou préréglage du synthé).
@@ -208,6 +216,7 @@ pub fn nom_du_son(source: SourceCanal, programme: u8) -> String {
     match source {
         SourceCanal::Soundfont => nom_instrument(programme).to_string(),
         SourceCanal::Soustractif => crate::synthes::PREREGLAGES_SOUSTRACTIF[programme as usize % crate::synthes::PREREGLAGES_SOUSTRACTIF.len()].nom.to_string(),
+        SourceCanal::Echantillons => "Échantillonneur".to_string(),
     }
 }
 
@@ -232,6 +241,7 @@ impl Projet {
             couleur: COULEURS[self.canaux.len() % COULEURS.len()].into(),
             note_defaut: options.note_defaut.unwrap_or(if options.batterie { NOTE_DEFAUT_BATTERIE } else { NOTE_DEFAUT_MELODIQUE }),
             source,
+            instrument: options.instrument,
         });
         id
     }

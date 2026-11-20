@@ -332,6 +332,14 @@ impl Noyau {
         self.canaux[numero].replace(canal)
     }
 
+    /// Donne un instrument d'échantillons au canal ; rend l'ancien (à libérer hors du fil audio).
+    pub fn changer_instrument(&mut self, numero: u32, instrument: Option<Arc<crate::echantillonneur::InstrumentEchantillons>>) -> Option<Arc<crate::echantillonneur::InstrumentEchantillons>> {
+        match self.canaux.get_mut(numero as usize) {
+            Some(Some(canal)) => canal.sources[TypeSource::Echantillons.index()].changer_instrument(instrument),
+            _ => instrument,
+        }
+    }
+
     pub fn installer_piste(&mut self, numero: u32, piste: Box<Piste>) -> Option<Box<Piste>> {
         let numero = numero as usize;
         if numero >= self.pistes.capacity() {

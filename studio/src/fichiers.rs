@@ -264,7 +264,7 @@ impl Studio {
     /// Rend le projet (pattern ou morceau, selon le mode) par le moteur et l'écrit en WAV.
     pub fn exporter_wav_dans(&self, chemin: &Path) -> Result<(), String> {
         let banque = self.banque().ok_or("aucune banque de sons")?;
-        rendre_wav(&banque, &self.projet, self.mode, chemin)
+        rendre_wav(&banque, &self.projet, self.mode, &self.instruments_pour_rendu(), chemin)
     }
 
     fn choisir_export(&self, extension: &str, filtre: &str) -> Option<PathBuf> {
@@ -293,10 +293,10 @@ impl Studio {
             self.message = Some("Export WAV impossible : aucune banque de sons.".into());
             return;
         };
-        let (projet, mode) = (self.projet.clone(), self.mode);
+        let (projet, mode, instruments) = (self.projet.clone(), self.mode, self.instruments_pour_rendu());
         let (envoi, reception) = channel();
         std::thread::spawn(move || {
-            let _ = envoi.send(rendre_wav(&banque, &projet, mode, &chemin).map(|()| chemin));
+            let _ = envoi.send(rendre_wav(&banque, &projet, mode, &instruments, &chemin).map(|()| chemin));
         });
         self.fichiers.export = Some(reception);
         self.message = Some(format!("Export WAV en cours ({})…", if mode == ModeLecture::Morceau { "morceau" } else { "pattern" }));
@@ -525,10 +525,16 @@ fn elaguer_copies(dossier: &Path) {
 }
 
 /// Rendu hors ligne par le moteur, écrit en WAV 16 bits stéréo.
-fn rendre_wav(banque: &std::sync::Arc<moteur::SoundFont>, projet: &Projet, mode: ModeLecture, chemin: &Path) -> Result<(), String> {
+fn rendre_wav(
+    banque: &std::sync::Arc<moteur::SoundFont>,
+    projet: &Projet,
+    mode: ModeLecture,
+    instruments: &[(u32, std::sync::Arc<moteur::echantillonneur::InstrumentEchantillons>)],
+    chemin: &Path,
+) -> Result<(), String> {
     let configuration = pont::configuration(projet);
     let session = pont::session(projet, mode);
-    let (g, d) = moteur::rendu::rendre_session(banque, FREQUENCE_EXPORT, &configuration, &session, QUEUE_EXPORT)?;
+    let (g, d) = moteur::rendu::rendre_session(banque, FREQUENCE_EXPORT, &configuration, instruments, &session, QUEUE_EXPORT)?;
     std::fs::write(chemin, moteur::rendu::wav(&g, &d, FREQUENCE_EXPORT)).map_err(|e| e.to_string())
 }
 

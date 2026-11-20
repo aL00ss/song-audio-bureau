@@ -266,6 +266,23 @@ La reconstruction native est terminée. Suite : les phases D à O ci-dessous, ve
   donne exactement le même son que l'originale ; après fusion, le piano et le violon changent
   de son, la basse et la batterie non ; fichiers refusés ; chargement en arrière-plan et
   crédits dans l'interface.
+- [x] **D2 — Échantillonneur SFZ** : lecture des fichiers SFZ (en-têtes control, global, master,
+  group, region et leur héritage, #define, noms de notes, default_path, noms de fichiers à
+  espaces ; réglages ignorés listés) ; échantillons WAV (boucle du bloc « smpl » comprise) et
+  FLAC ; source « échantillonneur » du moteur : 64 voix réservées d'avance (aucune allocation
+  dans le fil audio), lecture interpolée, transposition selon le suivi du clavier, réglage fin,
+  couches de vélocité, courbe de vélocité, panoramique, enveloppe retard-attaque-tenue-déclin-
+  maintien-relâchement, boucles (une fois, continue, tenue), décalage et fin, alternance des
+  prises (round robin), groupes qui se coupent (charleston), bruits de relâchement amortis
+  selon la durée de la touche, déclenchement « première » et « legato ». L'instrument est donné
+  au canal par une commande ; l'ancien repart vers le fil de l'interface pour être libéré. Dans
+  l'application : « + Échantillonneur (SFZ)… », les fichiers .sfz de la liste des fichiers
+  ajoutent un canal ; chargement en arrière-plan, un instrument partagé par les canaux qui le
+  jouent, donné au moteur rang par rang (déplacements de canaux suivis) ; l'export WAV le rend ;
+  le projet garde le chemin du fichier (champ absent des autres canaux : fichiers inchangés).
+  4 tests SFZ, 4 tests de l'échantillonneur (hauteur, couches, boucle tenue, relâchement,
+  alternance, coupe, bruit de relâchement, échantillons manquants), 1 test du projet, 2 tests
+  d'interface (joué par le vrai moteur, hauteur juste dans l'export WAV, gardé dans le projet).
 
 ## Phases
 

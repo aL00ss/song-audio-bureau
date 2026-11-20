@@ -131,9 +131,9 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 
 | Fonction | Référence FL Studio | Chez song-audio | État | Phase |
 |---|---|---|---|---|
-| Lecture d'échantillon, note de base, plage | Channel Sampler | Échantillonneur | ⬜ | D |
+| Lecture d'échantillon, note de base, plage | Channel Sampler | Échantillonneur (instruments SFZ : zones, couches, alternance) | ✅ | D |
 | Inverser, normaliser, déclic, fondus, boucle (début/fin) | Precomputed effects, loop (2025.2) | Préparation du son | ⬜ | D |
-| Enveloppes (volume, filtre, hauteur, panoramique) | Envelope / LFO | Enveloppes ADSR et LFO | 🟡 (synthé intégré) | D |
+| Enveloppes (volume, filtre, hauteur, panoramique) | Envelope / LFO | Enveloppes ADSR et LFO | 🟡 (volume : échantillonneur ; synthé intégré) | D |
 | Filtre (types multiples) | Filter | Filtres | 🟡 (synthé intégré) | D |
 | Étirement temporel et transposition | Time stretching | Étirement (Signalsmith Stretch) | ⬜ | L |
 | Arpégiateur de canal | Arpeggiator | Arpégiateur | ⬜ | F |

@@ -16,7 +16,7 @@ pub struct Entree {
 /// Fichiers que le studio sait ouvrir.
 pub fn fichier_utile(chemin: &Path) -> bool {
     let nom = chemin.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-    nom.ends_with(".mid") || nom.ends_with(".midi") || nom.ends_with(".json")
+    nom.ends_with(".mid") || nom.ends_with(".midi") || nom.ends_with(".json") || nom.ends_with(".sfz")
 }
 
 /// Contenu d'un dossier : sous-dossiers puis fichiers utiles, par ordre alphabétique, sans les

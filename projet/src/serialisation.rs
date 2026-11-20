@@ -104,10 +104,14 @@ fn lire_canal(v: &Value, chemin: &str) -> R<Canal> {
             Some(v) => entier(v, &format!("{chemin}.noteDefaut"), 0.0, 127.0)? as u8,
         },
         // absent des projets d'avant les synthés intégrés
-        source: if !batterie && o.get("source").and_then(Value::as_str) == Some("soustractif") {
-            SourceCanal::Soustractif
-        } else {
-            SourceCanal::Soundfont
+        source: match (batterie, o.get("source").and_then(Value::as_str)) {
+            (false, Some("soustractif")) => SourceCanal::Soustractif,
+            (_, Some("echantillons")) => SourceCanal::Echantillons,
+            _ => SourceCanal::Soundfont,
+        },
+        instrument: match o.get("instrument") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(texte(v, &format!("{chemin}.instrument"))?),
         },
     })
 }
@@ -257,6 +261,22 @@ mod tests {
         let demo = creer_demo();
         let relu = deserialiser(&serialiser(&demo)).unwrap();
         assert_eq!(relu, demo);
+    }
+
+    #[test]
+    fn canal_echantillonneur_garde_son_instrument() {
+        let mut p = creer_demo();
+        p.ajouter_canal(crate::modele::OptionsCanal {
+            source: SourceCanal::Echantillons,
+            instrument: Some("Banques/Piano/piano.sfz".into()),
+            nom: Some("Piano échantillonné".into()),
+            ..Default::default()
+        });
+        let json = serialiser(&p);
+        assert!(json.contains("\"source\":\"echantillons\""));
+        assert_eq!(deserialiser(&json).unwrap(), p);
+        // les autres canaux n'écrivent pas de champ « instrument »
+        assert_eq!(json.matches("\"instrument\"").count(), 1);
     }
 
     #[test]

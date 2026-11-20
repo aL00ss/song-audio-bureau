@@ -96,6 +96,8 @@ pub struct Studio {
     /// Banques plus fidèles chargées en plus de la General MIDI.
     pub banques_chargees: Vec<String>,
     pub credits_ouverts: bool,
+    /// Instruments d'échantillons (SFZ) chargés et donnés au moteur.
+    pub instruments: crate::instruments::EtatInstruments,
 }
 
 impl Studio {
@@ -120,6 +122,7 @@ impl Studio {
         self.message = message;
         self.banque = banque;
         self.envoye = None; // tout le projet part vers le nouveau moteur
+        self.instruments_a_renvoyer();
     }
 
     fn sans_moteur() -> Self {
@@ -155,6 +158,7 @@ impl Studio {
             chargement_banque: None,
             banques_chargees: Vec::new(),
             credits_ouverts: false,
+            instruments: Default::default(),
         }
     }
 
@@ -598,7 +602,11 @@ impl Studio {
                     egui::CollapsingHeader::new(&e.nom).id_salt(&e.chemin).default_open(false).show(ui, |ui| self.dossier(ui, &e.chemin, profondeur + 1));
                 }
             } else if ui.add(egui::Button::new(&e.nom).frame(false)).on_hover_text(e.chemin.display().to_string()).clicked() {
-                self.demander(crate::fichiers::Action::Fichier(e.chemin.clone()));
+                if e.nom.to_lowercase().ends_with(".sfz") {
+                    self.ajouter_echantillonneur(&e.chemin);
+                } else {
+                    self.demander(crate::fichiers::Action::Fichier(e.chemin.clone()));
+                }
             }
         }
     }
@@ -607,6 +615,11 @@ impl Studio {
         ui.label(RichText::new("INSTRUMENTS").small().strong().color(theme::DISCRET));
         if ui.button("+ Batterie").on_hover_text("Une ligne de batterie, en pas à pas").clicked() {
             self.ajouter_canal(OptionsCanal { batterie: true, ..Default::default() });
+        }
+        if ui.button("+ Échantillonneur (SFZ)…").on_hover_text("Un instrument fait d'échantillons : un fichier SFZ et ses sons").clicked() {
+            if let Some(c) = rfd::FileDialog::new().set_title("Choisir un instrument SFZ").add_filter("Instrument SFZ", &["sfz"]).pick_file() {
+                self.ajouter_echantillonneur(&c);
+            }
         }
         egui::CollapsingHeader::new(RichText::new("Synthés intégrés").color(theme::ACCENT)).default_open(true).show(ui, |ui| {
             for (i, p) in PREREGLAGES_SOUSTRACTIF.iter().enumerate() {
@@ -631,6 +644,10 @@ pub(crate) fn famille_ou_synthe(canal: &projet::Canal) -> String {
     match canal.source {
         SourceCanal::Soustractif => "Synthé intégré".into(),
         SourceCanal::Soundfont => format!("{} ({})", nom_instrument(canal.programme), famille_instrument(canal.programme)),
+        SourceCanal::Echantillons => {
+            let fichier = canal.instrument.as_deref().map(|c| Path::new(c).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).unwrap_or_default();
+            format!("Échantillonneur : {fichier}")
+        }
     }
 }
 
@@ -745,6 +762,7 @@ impl eframe::App for Studio {
         self.consigner_historique(geste);
         // le son suit l'interface, à chaque image
         self.synchroniser();
+        self.suivre_instruments(Some(&ctx));
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.titre()));
         if self.etat_transport() == EtatTransport::Lecture {
             ctx.request_repaint();

@@ -34,6 +34,7 @@ pub fn configuration(projet: &Projet) -> Configuration {
             piste: piste as u32,
             source: match canal.source {
                 SourceCanal::Soustractif if !canal.batterie => TypeSource::Soustractif,
+                SourceCanal::Echantillons => TypeSource::Echantillons,
                 _ => TypeSource::SoundFont,
             },
         };

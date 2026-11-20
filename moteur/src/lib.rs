@@ -3,10 +3,12 @@
 
 pub mod ateliers;
 pub mod banques;
+pub mod echantillonneur;
 pub mod effets;
 pub mod noyau;
 mod performance;
 pub mod rendu;
+pub mod sfz;
 pub mod sortie;
 pub mod source;
 pub mod soustractif;

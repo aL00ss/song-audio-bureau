@@ -7,6 +7,8 @@ use std::sync::Arc;
 
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 
+use crate::echantillonneur::InstrumentEchantillons;
+
 /// Ce qu'un instrument doit savoir faire pour jouer dans un canal.
 pub trait Source: Send {
     /// Programme (instrument ou préréglage), batterie, volume (0 à 1), panoramique (-1 à 1).
@@ -21,6 +23,11 @@ pub trait Source: Send {
     }
     /// Remplace le contenu de `gauche` et `droite` par la suite du son.
     fn rendre(&mut self, gauche: &mut [f32], droite: &mut [f32]);
+    /// Change l'instrument d'échantillons (seul l'échantillonneur en a un) ; rend l'ancien, qui
+    /// doit être libéré hors du fil audio.
+    fn changer_instrument(&mut self, instrument: Option<Arc<InstrumentEchantillons>>) -> Option<Arc<InstrumentEchantillons>> {
+        instrument
+    }
 }
 
 /// Types de sources intégrées, dans l'ordre où chaque canal les range.
@@ -31,22 +38,29 @@ pub enum TypeSource {
     SoundFont,
     /// Synthétiseur soustractif intégré (préréglages choisis par le programme).
     Soustractif,
+    /// Échantillonneur (instrument SFZ donné au canal à part).
+    Echantillons,
 }
 
-pub const TYPES_SOURCES: usize = 2;
+pub const TYPES_SOURCES: usize = 3;
 
 impl TypeSource {
     pub fn index(self) -> usize {
         match self {
             TypeSource::SoundFont => 0,
             TypeSource::Soustractif => 1,
+            TypeSource::Echantillons => 2,
         }
     }
 }
 
 /// Crée une source de chaque type intégré, rangées selon `TypeSource::index`.
 pub fn sources_integrees(banque: &Arc<SoundFont>, frequence: u32) -> Result<[Box<dyn Source>; TYPES_SOURCES], String> {
-    Ok([Box::new(LecteurSoundFont::new(banque, frequence)?), Box::new(crate::soustractif::Soustractif::new(frequence))])
+    Ok([
+        Box::new(LecteurSoundFont::new(banque, frequence)?),
+        Box::new(crate::soustractif::Soustractif::new(frequence)),
+        Box::new(crate::echantillonneur::Echantillonneur::new(frequence)),
+    ])
 }
 
 // ------------------------------------------------------------------ lecteur SoundFont

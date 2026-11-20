@@ -24,6 +24,8 @@ pub enum Commande {
     /// Un canal ou une piste, construits hors du fil audio, à installer à leur numéro.
     InstallerCanal(u32, Box<Canal>),
     InstallerPiste(u32, Box<Piste>),
+    /// Un instrument d'échantillons (chargé hors du fil audio) pour un canal.
+    Instrument(u32, Option<Arc<crate::echantillonneur::InstrumentEchantillons>>),
 }
 
 /// Ce que le fil audio rend au fil de l'interface pour être libéré hors du fil audio.
@@ -33,6 +35,7 @@ pub enum Dechet {
     Stockage(Box<Stockage>),
     Canal(Box<Canal>),
     Piste(Box<Piste>),
+    Instrument(Arc<crate::echantillonneur::InstrumentEchantillons>),
 }
 
 /// Capacité de départ du graphe (le noyau en réserve autant à sa création).
@@ -219,6 +222,11 @@ impl Moteur {
         self.envoyer(Commande::ToutCouper);
     }
 
+    /// Donne un instrument d'échantillons au canal de ce numéro (déjà installé dans le graphe).
+    pub fn changer_instrument(&mut self, canal: u32, instrument: Option<Arc<crate::echantillonneur::InstrumentEchantillons>>) {
+        self.envoyer(Commande::Instrument(canal, instrument));
+    }
+
     pub fn definir_session(&mut self, session: Session) {
         // préparée ici (tri, allocation), hors du fil audio
         self.envoyer(Commande::Session(Box::new(SessionPreparee::new(session))));
@@ -320,6 +328,12 @@ impl Rendu {
                 Commande::InstallerCanal(numero, canal) => {
                     if let Some(ancien) = noyau.installer_canal(numero, canal) {
                         let _ = self.poubelle.push(Dechet::Canal(ancien));
+                    }
+                }
+                Commande::Instrument(numero, instrument) => {
+                    // l'ancien instrument repart : sa dernière référence ne meurt pas ici
+                    if let Some(ancien) = noyau.changer_instrument(numero, instrument) {
+                        let _ = self.poubelle.push(Dechet::Instrument(ancien));
                     }
                 }
                 Commande::InstallerPiste(numero, piste) => {
