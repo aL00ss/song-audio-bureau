@@ -84,12 +84,16 @@ pub struct Studio {
     /// Hauteur des réglages d'une tranche (égaliseur, panoramique), mesurée à l'affichage.
     pub(crate) hauteur_reglages: f32,
     pub arrangement: crate::arrangement::EtatArrangement,
+    /// Historique, exports, récents, sauvegardes.
+    pub fichiers: crate::fichiers::EtatFichiers,
+    /// Banque General MIDI (gardée pour les exports WAV).
+    banque: Option<Arc<SoundFont>>,
 }
 
 impl Studio {
     /// Démarre le moteur (sortie audio, ou horloge silencieuse sans carte son) avec la banque.
     pub fn new(banque: Option<Arc<SoundFont>>) -> Self {
-        let (moteur, message) = match banque.map(Moteur::demarrer) {
+        let (moteur, message) = match banque.clone().map(Moteur::demarrer) {
             Some(Ok(m)) => {
                 let message = m.sortie().is_none().then(|| "Aucune sortie audio détectée : branchez un casque ou des enceintes, puis relancez song-audio.".to_string());
                 (Some(m), message)
@@ -122,6 +126,8 @@ impl Studio {
             renommage_piste: None,
             hauteur_reglages: 70.0,
             arrangement: Default::default(),
+            fichiers: Default::default(),
+            banque,
         }
     }
 
@@ -209,6 +215,10 @@ impl Studio {
     pub fn depuis_disque() -> Self {
         let banque = chemin_banque().and_then(|c| moteur::charger_banque(&c).ok());
         Self::new(banque)
+    }
+
+    pub fn banque(&self) -> Option<Arc<SoundFont>> {
+        self.banque.clone()
     }
 
     pub fn moteur(&self) -> Option<&Moteur> {
@@ -300,6 +310,7 @@ impl Studio {
         self.projet = projet;
         self.chemin = chemin;
         self.modifie = false;
+        self.historique_neuf();
     }
 
     pub fn ajouter_canal(&mut self, options: OptionsCanal) {
@@ -314,6 +325,7 @@ impl Studio {
             Ok(p) => {
                 self.remplacer_projet(p, Some(chemin.to_path_buf()));
                 self.message = None;
+                self.noter_recent(chemin);
             }
             Err(e) => self.message = Some(format!("Projet illisible : {e}")),
         }
@@ -327,29 +339,9 @@ impl Studio {
         std::fs::rename(&temporaire, chemin).map_err(|e| e.to_string())?;
         self.chemin = Some(chemin.to_path_buf());
         self.modifie = false;
+        self.noter_recent(chemin);
+        self.supprimer_reprise();
         Ok(())
-    }
-
-    fn enregistrer(&mut self, sous: bool) {
-        let chemin = match (&self.chemin, sous) {
-            (Some(c), false) => Some(c.clone()),
-            _ => rfd::FileDialog::new()
-                .set_title("Enregistrer le projet")
-                .add_filter("Projet song-audio", &["json"])
-                .set_file_name(format!("{}.song-audio.json", self.projet.nom))
-                .save_file(),
-        };
-        if let Some(c) = chemin {
-            if let Err(e) = self.enregistrer_dans(&c) {
-                self.message = Some(format!("Enregistrement impossible : {e}"));
-            }
-        }
-    }
-
-    fn choisir_et_ouvrir(&mut self) {
-        if let Some(c) = rfd::FileDialog::new().set_title("Ouvrir un projet").add_filter("Projet song-audio", &["json"]).pick_file() {
-            self.ouvrir(&c);
-        }
     }
 
     /// Titre de la fenêtre : nom du projet, et un point s'il n'est pas enregistré.
@@ -368,6 +360,16 @@ impl Studio {
     fn raccourcis(&mut self, ctx: &egui::Context) {
         // hors de la fermeture : interroger le contexte pendant `input` reprendrait son verrou
         let saisie = ctx.text_edit_focused();
+        let (annuler, retablir) = ctx.input(|i| {
+            let z = i.modifiers.command && i.key_pressed(egui::Key::Z);
+            (!saisie && z && !i.modifiers.shift, !saisie && ((z && i.modifiers.shift) || (i.modifiers.command && i.key_pressed(egui::Key::Y))))
+        });
+        if annuler {
+            self.annuler();
+        }
+        if retablir {
+            self.retablir();
+        }
         let (espace, maj, ctrl_s, ctrl_maj_s, ctrl_o) = ctx.input(|i| {
             (
                 !saisie && i.key_pressed(egui::Key::Space) && !i.modifiers.shift,
@@ -387,7 +389,7 @@ impl Studio {
             self.enregistrer(ctrl_maj_s);
         }
         if ctrl_o {
-            self.choisir_et_ouvrir();
+            self.demander(crate::fichiers::Action::ChoisirEtOuvrir);
         }
         for panneau in Panneau::TOUS {
             if let Some(touche) = panneau.touche() {
@@ -407,29 +409,8 @@ impl Studio {
             nom.append("-audio", 0.0, egui::TextFormat::simple(police, theme::ACCENT));
             ui.label(nom);
             ui.separator();
-            ui.menu_button("Fichier", |ui| {
-                if ui.button("Nouveau projet").clicked() {
-                    self.remplacer_projet(projet_vide(), None);
-                    ui.close();
-                }
-                if ui.button("Démo").clicked() {
-                    self.remplacer_projet(projet::demo::creer_demo(), None);
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button("Ouvrir un projet…   Ctrl+O").clicked() {
-                    ui.close();
-                    self.choisir_et_ouvrir();
-                }
-                if ui.button("Enregistrer   Ctrl+S").clicked() {
-                    ui.close();
-                    self.enregistrer(false);
-                }
-                if ui.button("Enregistrer sous…   Ctrl+Maj+S").clicked() {
-                    ui.close();
-                    self.enregistrer(true);
-                }
-            });
+            ui.menu_button("Fichier", |ui| self.menu_fichier(ui));
+            ui.menu_button("Édition", |ui| self.menu_edition(ui));
             ui.separator();
             let lecture = self.etat_transport() == EtatTransport::Lecture;
             let bouton_lecture = egui::Button::new(RichText::new(if lecture { "Pause" } else { "Lecture" }).strong().color(Color32::BLACK))
@@ -484,15 +465,15 @@ impl Studio {
     fn morceaux(&mut self, ui: &mut egui::Ui) {
         ui.label(RichText::new("MORCEAUX").small().strong().color(theme::DISCRET));
         if ui.button("+ Nouveau projet").on_hover_text("Projet vide avec un kit de batterie").clicked() {
-            self.remplacer_projet(projet_vide(), None);
+            self.demander(crate::fichiers::Action::Modele(projet::modeles::Modele::Vide));
         }
         if ui.button("⏵ Démo (4 instruments)").clicked() {
-            self.remplacer_projet(projet::demo::creer_demo(), None);
+            self.demander(crate::fichiers::Action::Modele(projet::modeles::Modele::Demo));
         }
         for m in self.navigateur.morceaux.clone() {
             ui.horizontal(|ui| {
                 if ui.add(egui::Button::new(format!("⏵ {}", m.titre)).frame(false)).on_hover_text(format!("{} — {} ({})\n{}", m.compositeur, m.oeuvre, m.annee, m.credit)).clicked() {
-                    self.charger_morceau(&m);
+                    self.demander(crate::fichiers::Action::Morceau(m.clone()));
                 }
                 ui.label(RichText::new(nom_court(&m.compositeur)).small().color(theme::DISCRET));
             });
@@ -504,7 +485,7 @@ impl Studio {
         ui.horizontal_wrapped(|ui| {
             if ui.small_button("Ouvrir un fichier…").on_hover_text("Un projet (.json) ou un fichier MIDI (.mid)").clicked() {
                 if let Some(c) = rfd::FileDialog::new().add_filter("Projet ou MIDI", &["json", "mid", "midi"]).pick_file() {
-                    self.ouvrir_fichier(&c);
+                    self.demander(crate::fichiers::Action::Fichier(c));
                 }
             }
             if ui.small_button("Dossier…").on_hover_text("Choisir le dossier affiché").clicked() {
@@ -534,7 +515,7 @@ impl Studio {
                     egui::CollapsingHeader::new(&e.nom).id_salt(&e.chemin).default_open(false).show(ui, |ui| self.dossier(ui, &e.chemin, profondeur + 1));
                 }
             } else if ui.add(egui::Button::new(&e.nom).frame(false)).on_hover_text(e.chemin.display().to_string()).clicked() {
-                self.ouvrir_fichier(&e.chemin);
+                self.demander(crate::fichiers::Action::Fichier(e.chemin.clone()));
             }
         }
     }
@@ -563,16 +544,6 @@ impl Studio {
     }
 }
 
-fn projet_vide() -> Projet {
-    let mut p = projet::modele::creer_projet("Nouveau projet");
-    for (nom, note) in [("Grosse caisse", 36), ("Clap", 39), ("Charleston", 42), ("Caisse claire", 38)] {
-        p.ajouter_canal(OptionsCanal { batterie: true, nom: Some(nom.into()), note_defaut: Some(note), ..Default::default() });
-    }
-    let id = p.pattern_actif.clone();
-    p.ajouter_clip(&id, 0, 0);
-    p
-}
-
 pub(crate) fn famille_ou_synthe(canal: &projet::Canal) -> String {
     match canal.source {
         SourceCanal::Soustractif => "Synthé intégré".into(),
@@ -595,10 +566,19 @@ fn afficheur(ui: &mut egui::Ui, texte: &str, aide: &str) {
 }
 
 impl eframe::App for Studio {
+    fn on_exit(&mut self) {
+        // fermeture normale : le travail est enregistré, ou l'utilisateur a choisi de ne pas le
+        // faire ; la reprise ne sert plus
+        if !self.modifie || self.fichiers.fermeture_permise {
+            self.supprimer_reprise();
+        }
+    }
+
     fn save(&mut self, stockage: &mut dyn eframe::Storage) {
         if let Some(dock) = &self.dock {
             eframe::set_value(stockage, CLE_DISPOSITION, dock);
         }
+        eframe::set_value(stockage, crate::fichiers::CLE_RECENTS, &self.fichiers.recents);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -611,12 +591,13 @@ impl eframe::App for Studio {
         self.lire_mesures(secondes);
         // fichiers glissés sur la fenêtre : projet ou MIDI
         let deposes: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|c| c.is_absolute()).collect());
-        for chemin in deposes {
-            self.ouvrir_fichier(&chemin);
+        if let Some(chemin) = deposes.into_iter().next() {
+            self.demander(crate::fichiers::Action::Fichier(chemin));
         }
         egui::Panel::top("transport").show(ui, |ui| {
             ui.add_space(4.0);
             self.barre_transport(ui);
+            self.bandeau_reprise(ui);
             ui.add_space(4.0);
         });
         let etat = match self.etat_transport() {
@@ -661,6 +642,19 @@ impl eframe::App for Studio {
                 self.dock = Some(dock);
             }
         });
+        self.fiche_du_projet(&ctx);
+        self.relever_export();
+        // fermer la fenêtre avec des modifications : on demande d'abord
+        if ctx.input(|i| i.viewport().close_requested()) && self.modifie && !self.fichiers.fermeture_permise {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.fichiers.en_attente = Some(crate::fichiers::Action::Fermer);
+        }
+        if self.confirmation(&ctx) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        self.sauvegarder(std::time::Instant::now());
+        let geste = ctx.input(|i| i.pointer.any_down()) || ctx.text_edit_focused();
+        self.consigner_historique(geste);
         // le son suit l'interface, à chaque image
         self.synchroniser();
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.titre()));

@@ -4,6 +4,7 @@
 pub mod app;
 pub mod arrangement;
 pub mod coquille;
+pub mod fichiers;
 pub mod instrument;
 pub mod jeu;
 pub mod mixeur;

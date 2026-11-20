@@ -7,7 +7,7 @@ use std::fmt;
 
 use serde_json::{Map, Value};
 
-use crate::modele::{Canal, ClipPlaylist, Egaliseur, NoteMusicale, Pattern, PisteMixage, Projet, REVERB_DEFAUT, SourceCanal, VERSION_PROJET};
+use crate::modele::{Canal, ClipPlaylist, Egaliseur, InfosProjet, NoteMusicale, Pattern, PisteMixage, Projet, REVERB_DEFAUT, SourceCanal, VERSION_PROJET};
 use crate::temps::Signature;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -233,6 +233,17 @@ pub fn deserialiser(json: &str) -> R<Projet> {
         pattern_actif,
         playlist,
         mixage,
+        infos: match o.get("infos") {
+            None => InfosProjet::default(),
+            Some(v) => {
+                let i = objet(v, "projet.infos")?;
+                let lire = |nom: &str| match i.get(nom) {
+                    None => Ok(String::new()),
+                    Some(t) => texte(t, &format!("projet.infos.{nom}")),
+                };
+                InfosProjet { auteur: lire("auteur")?, genre: lire("genre")?, notes: lire("notes")? }
+            }
+        },
     })
 }
 
@@ -246,6 +257,20 @@ mod tests {
         let demo = creer_demo();
         let relu = deserialiser(&serialiser(&demo)).unwrap();
         assert_eq!(relu, demo);
+    }
+
+    #[test]
+    fn fiche_du_projet_gardee_et_absente_si_vide() {
+        let mut p = creer_demo();
+        assert!(!serialiser(&p).contains("infos"), "fiche vide : rien d'écrit (fichier identique à la version web)");
+        p.infos.auteur = "Alex".into();
+        p.infos.notes = "Refrain à retravailler
+mesure 9".into();
+        let json = serialiser(&p);
+        assert!(json.contains("\"infos\""));
+        assert_eq!(deserialiser(&json).unwrap(), p);
+        let abime = json.replace("\"auteur\":\"Alex\"", "\"auteur\":3");
+        assert!(deserialiser(&abime).unwrap_err().0.contains("projet.infos.auteur"));
     }
 
     /// Un projet tel que la version web l'enregistre (champs ajoutés au fil des étapes absents).

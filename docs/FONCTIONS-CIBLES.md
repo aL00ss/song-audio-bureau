@@ -48,7 +48,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Écrans tactiles, multi-touch | Multi-touch | Gestes tactiles | ⬜ | O |
 | Indicateurs processeur, mémoire, polyphonie | CPU / RAM / poly | Indicateurs de charge (canaux éveillés, voix, cœurs) | ⬜ | O |
 | Barre de transport, afficheurs | Toolbar | Barre de transport | ✅ | N0 |
-| Page d'accueil, projets récents | Start page | Accueil : projets récents, modèles | ⬜ | N8 |
+| Page d'accueil, projets récents | Start page | Projets récents et modèles dans le menu Fichier ; page d'accueil à venir | 🟡 | N8, O |
 | Tutoriels intégrés | Tutorials | Aide intégrée en français | ⬜ | O |
 | Assistant conversationnel | Gopher (IA, 2025 ; agit dans le projet en 2026) | Assistant (Claude ou modèle local) qui répond et agit dans le projet | ⬜ | O |
 | Langues | Interface anglaise surtout | Français d'abord, puis autres langues | ✅ (français) | — |
@@ -58,12 +58,12 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Fonction | Référence FL Studio | Chez song-audio | État | Phase |
 |---|---|---|---|---|
 | Nouveau, ouvrir, enregistrer, enregistrer sous | Fichier | Menu Fichier, boîtes du système | ✅ | N0 |
-| Modèles de projet | Templates | Modèles (vide, hip-hop, électro, orchestre, piano, démo) | 🌐 | N8 |
-| Sauvegarde automatique, copies de secours | Autosave, backups | Sauvegarde automatique horodatée | 🌐 | N8 |
-| Reprise après plantage | Recover | Reprise du dernier état | 🌐 | N8 |
-| Annuler, rétablir, historique visible | Undo history (suppression de pistes annulable en 2025) | Historique complet, liste des étapes | 🌐 | N8 |
+| Modèles de projet | Templates | Modèles (vide, hip-hop, électro, orchestre, piano, démo) | ✅ | N8 |
+| Sauvegarde automatique, copies de secours | Autosave, backups | Copies horodatées (toutes les 5 min, 20 gardées) | ✅ | N8 |
+| Reprise après plantage | Recover | Reprise du travail non enregistré au démarrage | ✅ | N8 |
+| Annuler, rétablir, historique visible | Undo history (suppression de pistes annulable en 2025) | Historique nommé de 200 étapes, un geste = une étape | ✅ | N8 |
 | Projet compressé avec ses échantillons | Export project data files / ZIP | Archive de projet avec ses sons | ⬜ | D |
-| Infos du projet (titre, auteur, genre, notes) | Project info | Fiche du projet | ⬜ | N8 |
+| Infos du projet (titre, auteur, genre, notes) | Project info | Fiche du projet | ✅ | N8 |
 | Sauvegarde du projet en ligne | FL Cloud backup (2026) | Dossier synchronisé au choix (local, Git, nuage personnel) | ⛔ → dossier synchronisé | O |
 | Import de projets d'autres logiciels | (partiel) | Import MIDI (un instrument par canal), puis formats ouverts (DAWproject) | 🟡 (MIDI ✅) | N2, N |
 | Format ouvert compatible web | — | Même JSON que la version web | ✅ | N0 |
@@ -167,7 +167,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Marqueurs de temps | Time markers | Marqueurs | ⬜ | F |
 | Scripts d'édition | Piano roll scripts (Python) | Scripts (Lua ou Rhai) | ⬜ | F |
 | Clavier vertical jouable | Keyboard | Clavier jouable | ✅ | N4 |
-| Import et export MIDI d'un pattern | Import/export MIDI | Import/export par pattern | 🌐 (projet) | N8 |
+| Import et export MIDI d'un pattern | Import/export MIDI | Export du pattern ou du morceau ; import dans un pattern à venir | 🟡 | N8, F |
 
 ## 8. Arrangement (playlist)
 
@@ -270,7 +270,7 @@ Chaque instrument de FL Studio, sa fonction, et son équivalent prévu (nom à n
 | Spectroman, Wave Candy, dB Meter, Tuner, Big Clock | Analyseurs, accordeur | Spectre, oscilloscope, niveaux, accordeur | ⬜ | I |
 | ZGameEditor Visualizer | Vidéo musicale | Visualiseur | ⬜ | O |
 | Peak Controller, Formula Controller, X-Y Controller | Contrôleurs internes | Contrôleurs | ⬜ | K |
-| Notebook | Notes dans le projet | Bloc-notes | ⬜ | N8 |
+| Notebook | Notes dans le projet | Notes de la fiche du projet | ✅ | N8 |
 | Send | Envoi | Envois | 🟡 | H |
 | Mastering IA | FL Cloud Mastering | Chaîne de mastering automatique locale | ⬜ | I |
 
@@ -320,9 +320,9 @@ Chaque instrument de FL Studio, sa fonction, et son équivalent prévu (nom à n
 
 | Fonction | Référence FL Studio | Chez song-audio | État | Phase |
 |---|---|---|---|---|
-| Export WAV | Export WAV | Rendu hors ligne | 🌐 | N8 |
+| Export WAV | Export WAV | Rendu hors ligne par le moteur, dans un fil à part | ✅ | N8 |
 | MP3, OGG, FLAC | Export formats | Mêmes formats | ⬜ | N |
-| MIDI | Export MIDI | Export MIDI (16 canaux par port, sans plafond) | 🌐 | N8 |
+| MIDI | Export MIDI | Export MIDI (sans plafond de pistes) | ✅ | N8 |
 | Pistes séparées | Split mixer tracks | Export par piste | ⬜ | N |
 | Qualité de rendu (rééchantillonnage, dithering) | Render options | Options de rendu | ⬜ | N |
 | Rendu d'une sélection, d'une boucle | Render selection | Rendu partiel | ⬜ | N |

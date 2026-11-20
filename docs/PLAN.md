@@ -215,6 +215,24 @@ passent par egui_kittest.
   batterie (FPC), le clavier de l'ordinateur comme piano, la future bibliothèque de sons en
   ligne (FL Cloud Sounds). L'ancienne application Tauri garde ces fonctions jusqu'à son retrait
   (N9).
+- [x] **N8 — Fichiers** : export MIDI écrit en Rust (format 1, 480 tics par noire, une piste
+  par canal avec son instrument, batteries sur le canal 10, pas de plafond de pistes), tests de
+  la version web traduits (aller-retour de la démo identique, canaux coupés absents, swing,
+  mode morceau, nom de fichier sûr) ; export WAV rendu hors ligne par le moteur lui-même (le son
+  exporté est celui qu'on entend), dans un fil à part, selon PAT ou SONG, 3 s de queue.
+  Annuler et rétablir : Ctrl+Z, Ctrl+Y, Ctrl+Maj+Z, menu Édition qui nomme l'étape (« Notes de
+  Piano », « Clip posé »…), historique cliquable ; une étape par geste (un glisser entier, un
+  renommage) ; changer de pattern édité n'est pas une étape ; 200 étapes gardées. Avant de
+  remplacer un projet modifié (nouveau, ouvrir, morceau, fichier glissé, récent) et avant de
+  fermer la fenêtre : « Enregistrer les modifications ? » (Enregistrer, Ne pas enregistrer,
+  Annuler). Fichier de reprise (toutes les 30 s au plus, seulement si le projet a changé) proposé
+  au démarrage suivant après un plantage, effacé à l'enregistrement et à la fermeture normale ;
+  copies de secours horodatées toutes les 5 min (les 20 dernières). Projets récents (10, gardés
+  d'une session à l'autre) ; six modèles (vide, hip-hop, électro, orchestre, piano seul, démo) ;
+  fiche du projet (titre, auteur, genre, notes), enregistrée dans le fichier seulement si elle
+  est remplie (sinon le fichier reste celui de la version web). 6 tests `export_midi`,
+  4 tests `historique`, 2 tests `modeles`, 1 test de la fiche, 2 tests des sauvegardes, 5 tests
+  d'interface (dont l'export WAV vérifié : durée, son, pas de saturation).
 
 ## Phases
 

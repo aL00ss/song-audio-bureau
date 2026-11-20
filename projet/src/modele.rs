@@ -112,6 +112,21 @@ pub fn creer_piste(index: usize, nom: &str) -> PisteMixage {
     }
 }
 
+/// Fiche du projet : auteur, genre et notes libres (le titre est le nom du projet). Absente des
+/// fichiers de la version web, qui l'ignore.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct InfosProjet {
+    pub auteur: String,
+    pub genre: String,
+    pub notes: String,
+}
+
+impl InfosProjet {
+    pub fn est_vide(&self) -> bool {
+        self.auteur.is_empty() && self.genre.is_empty() && self.notes.is_empty()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Projet {
@@ -127,6 +142,8 @@ pub struct Projet {
     pub pattern_actif: String,
     pub playlist: Vec<ClipPlaylist>,
     pub mixage: Vec<PisteMixage>,
+    #[serde(default, skip_serializing_if = "InfosProjet::est_vide")]
+    pub infos: InfosProjet,
 }
 
 const COULEURS: [&str; 8] = ["#f5a524", "#4cc38a", "#5aa9f5", "#e5679a", "#a78bfa", "#f97362", "#2dd4bf", "#facc15"];
@@ -170,6 +187,7 @@ pub fn creer_projet(nom: &str) -> Projet {
         patterns: vec![pattern],
         playlist: Vec::new(),
         mixage: vec![creer_piste(0, "Maître")],
+        infos: InfosProjet::default(),
     }
 }
 
