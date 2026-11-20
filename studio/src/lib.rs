@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod arrangement;
+pub mod banques;
 pub mod coquille;
 pub mod fichiers;
 pub mod instrument;

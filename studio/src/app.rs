@@ -98,6 +98,8 @@ pub struct Studio {
     pub credits_ouverts: bool,
     /// Instruments d'échantillons (SFZ) chargés et donnés au moteur.
     pub instruments: crate::instruments::EtatInstruments,
+    /// Banques de sons en cours de téléchargement.
+    pub banques: crate::banques::EtatBanques,
 }
 
 impl Studio {
@@ -159,6 +161,7 @@ impl Studio {
             banques_chargees: Vec::new(),
             credits_ouverts: false,
             instruments: Default::default(),
+            banques: Default::default(),
         }
     }
 
@@ -546,6 +549,8 @@ impl Studio {
             self.fichiers(ui);
             ui.add_space(8.0);
             self.instruments(ui);
+            ui.add_space(8.0);
+            self.section_banques(ui);
         });
     }
 
@@ -684,6 +689,10 @@ impl eframe::App for Studio {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.relever_chargement();
+        self.relever_banques();
+        if self.banques_en_cours() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        }
         if self.chargement_banque.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
@@ -785,6 +794,7 @@ impl Studio {
         let mut ouverte = true;
         let morceaux = self.navigateur.morceaux.clone();
         let chargees = self.banques_chargees.clone();
+        let racine_banques = self.dossier_des_banques();
         egui::Window::new("Crédits des sons").open(&mut ouverte).default_width(520.0).show(ctx, |ui| {
             egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
                 ui.label(RichText::new("Banques de sons").strong());
@@ -813,6 +823,16 @@ impl Studio {
                 );
                 if !chargees.is_empty() {
                     ui.label(RichText::new(format!("Chargées : {}", chargees.join(", "))).small().color(theme::DISCRET));
+                }
+                if let Some(racine) = &racine_banques {
+                    let installees: Vec<_> = crate::banques::CATALOGUE.iter().filter(|b| crate::banques::installee(racine, b.id)).collect();
+                    if !installees.is_empty() {
+                        ui.separator();
+                        ui.label(RichText::new("Banques téléchargées").strong());
+                        for b in installees {
+                            banque(ui, b.nom, b.auteur, b.licence, b.url);
+                        }
+                    }
                 }
                 ui.separator();
                 ui.label(RichText::new("Morceaux fournis").strong());

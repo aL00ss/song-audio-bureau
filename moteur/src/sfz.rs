@@ -76,6 +76,21 @@ pub struct Region {
     pub sequence: (u32, u32),
     /// Amortissement des bruits de relâchement, en dB par seconde de touche tenue.
     pub amortissement_relachement: f32,
+    /// Choix au hasard entre des prises : la région joue si le tirage (0 à 1) tombe dans
+    /// [bas, haut[.
+    pub alea: (f32, f32),
+    /// Changement d'articulation par des touches : la région joue si la dernière touche de
+    /// commutation enfoncée est `commutateur` ; touches de commutation et articulation de départ.
+    pub commutateur: Option<u8>,
+    pub commutation: Option<(u8, u8)>,
+    pub commutateur_defaut: Option<u8>,
+    /// Courbe de vélocité : (vélocité, gain de 0 à 1), points donnés par le fichier.
+    pub courbe_velocite: Vec<(u8, f32)>,
+    /// Amplitude, en %, et parts qui dépendent de contrôleurs MIDI (numéro, %).
+    pub amplitude: f32,
+    pub amplitude_cc: Vec<(u8, f32)>,
+    /// Plages de contrôleurs hors desquelles la région ne joue pas (numéro, bas, haut).
+    pub plages_cc: Vec<(u8, u8, u8)>,
 }
 
 impl Default for Region {
@@ -109,6 +124,14 @@ impl Default for Region {
             coupe: None,
             sequence: (1, 1),
             amortissement_relachement: 0.0,
+            alea: (0.0, 1.0),
+            commutateur: None,
+            commutation: None,
+            commutateur_defaut: None,
+            courbe_velocite: Vec::new(),
+            amplitude: 100.0,
+            amplitude_cc: Vec::new(),
+            plages_cc: Vec::new(),
         }
     }
 }
@@ -274,20 +297,132 @@ fn appliquer(r: &mut Region, nom: &str, valeur: &str, dossier: &Path, chemin_def
         "seq_length" => r.sequence.0 = entier().unwrap_or(1).max(1) as u32,
         "seq_position" => r.sequence.1 = entier().unwrap_or(1).max(1) as u32,
         "rt_decay" => r.amortissement_relachement = nombre().unwrap_or(0.0).max(0.0),
-        _ => return false,
+        "lorand" => r.alea.0 = nombre().unwrap_or(0.0),
+        "hirand" => r.alea.1 = nombre().unwrap_or(1.0),
+        "sw_last" => r.commutateur = touche(valeur),
+        "sw_lokey" => r.commutation = touche(valeur).map(|t| (t, r.commutation.map_or(t, |c| c.1))),
+        "sw_hikey" => r.commutation = touche(valeur).map(|t| (r.commutation.map_or(t, |c| c.0), t)),
+        "sw_default" => r.commutateur_defaut = touche(valeur),
+        "amplitude" => r.amplitude = nombre().unwrap_or(100.0).max(0.0),
+        _ => {
+            // réglages numérotés : amp_velcurve_N, amplitude_onccN / amplitude_ccN, loccN / hiccN
+            if let Some(v) = nom.strip_prefix("amp_velcurve_").and_then(|n| n.parse::<u8>().ok()) {
+                if let Some(g) = nombre() {
+                    r.courbe_velocite.retain(|(x, _)| *x != v);
+                    r.courbe_velocite.push((v.min(127), g.clamp(0.0, 1.0)));
+                    r.courbe_velocite.sort_by_key(|(x, _)| *x);
+                }
+                return true;
+            }
+            if let Some(cc) = nom.strip_prefix("amplitude_oncc").or_else(|| nom.strip_prefix("amplitude_cc")).and_then(|n| n.parse::<u8>().ok()) {
+                if let Some(pct) = nombre() {
+                    r.amplitude_cc.retain(|(c, _)| *c != cc);
+                    r.amplitude_cc.push((cc, pct));
+                }
+                return true;
+            }
+            for (prefixe, haut) in [("locc", false), ("hicc", true)] {
+                if let Some(cc) = nom.strip_prefix(prefixe).and_then(|n| n.parse::<u8>().ok()) {
+                    let v = entier().unwrap_or(if haut { 127 } else { 0 }).clamp(0, 127) as u8;
+                    match r.plages_cc.iter_mut().find(|(c, _, _)| *c == cc) {
+                        Some(p) => {
+                            if haut {
+                                p.2 = v
+                            } else {
+                                p.1 = v
+                            }
+                        }
+                        None => r.plages_cc.push(if haut { (cc, 0, v) } else { (cc, v, 127) }),
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
     }
     true
 }
 
-/// Résultat de la lecture : les régions, et les réglages ignorés (pour en informer).
-#[derive(Clone, Debug, Default, PartialEq)]
+/// Résultat de la lecture : les régions, les valeurs de départ des contrôleurs MIDI (`set_ccN`)
+/// et les réglages ignorés (pour en informer).
+#[derive(Clone, Debug, PartialEq)]
 pub struct InstrumentSfz {
     pub regions: Vec<Region>,
+    pub controleurs: [u8; 128],
     pub ignores: Vec<String>,
+}
+
+impl Default for InstrumentSfz {
+    fn default() -> Self {
+        InstrumentSfz { regions: Vec::new(), controleurs: [0; 128], ignores: Vec::new() }
+    }
+}
+
+impl Region {
+    /// Gain fixe de la région : amplitude, et parts liées aux contrôleurs à leur valeur de départ.
+    pub fn gain_amplitude(&self, controleurs: &[u8; 128]) -> f32 {
+        let mut g = self.amplitude / 100.0;
+        for (cc, pct) in &self.amplitude_cc {
+            g *= controleurs[*cc as usize & 127] as f32 / 127.0 * pct / 100.0;
+        }
+        g
+    }
+
+    /// Vrai si les contrôleurs, à leur valeur de départ, sont dans les plages de la région.
+    pub fn dans_les_plages(&self, controleurs: &[u8; 128]) -> bool {
+        self.plages_cc.iter().all(|(cc, bas, haut)| (*bas..=*haut).contains(&controleurs[*cc as usize & 127]))
+    }
+
+    /// Gain d'une vélocité selon la courbe du fichier (interpolée), s'il en donne une.
+    pub fn gain_courbe(&self, velocite: u8) -> Option<f32> {
+        if self.courbe_velocite.is_empty() {
+            return None;
+        }
+        let mut points = vec![(0u8, 0.0f32)];
+        points.extend(self.courbe_velocite.iter().copied().filter(|(v, _)| *v > 0 && *v < 127));
+        points.push((127, self.courbe_velocite.iter().find(|(v, _)| *v == 127).map_or(1.0, |p| p.1)));
+        let i = points.iter().rposition(|(v, _)| *v <= velocite).unwrap_or(0);
+        let (a, b) = (points[i], points.get(i + 1).copied().unwrap_or(points[i]));
+        if b.0 == a.0 {
+            return Some(a.1);
+        }
+        Some(a.1 + (b.1 - a.1) * (velocite - a.0) as f32 / (b.0 - a.0) as f32)
+    }
+}
+
+/// Remplace les lignes `#include "fichier"` par le contenu du fichier (chemins relatifs au
+/// dossier de l'instrument, inclusions imbriquées comprises).
+pub fn resoudre_inclusions(texte: &str, dossier: &Path, profondeur: usize) -> String {
+    let mut sortie = String::with_capacity(texte.len());
+    for ligne in texte.lines() {
+        let propre = ligne.trim_start();
+        if let Some(reste) = propre.strip_prefix("#include") {
+            let nom = reste.trim().trim_matches('"').replace('\\', "/");
+            if profondeur < 16 {
+                if let Ok(contenu) = std::fs::read_to_string(dossier.join(&nom)) {
+                    sortie.push_str(&resoudre_inclusions(&contenu, dossier, profondeur + 1));
+                    sortie.push('\n');
+                }
+            }
+            continue;
+        }
+        sortie.push_str(ligne);
+        sortie.push('\n');
+    }
+    sortie
+}
+
+/// Fichiers inclus par un SFZ (pour ne lister que les instruments principaux d'une banque).
+pub fn inclusions(texte: &str) -> Vec<String> {
+    texte
+        .lines()
+        .filter_map(|l| l.trim_start().strip_prefix("#include").map(|r| r.trim().trim_matches('"').replace('\\', "/")))
+        .collect()
 }
 
 /// Lit le texte d'un fichier SFZ ; les chemins des échantillons sont relatifs à `dossier`.
 pub fn lire_sfz(texte: &str, dossier: &Path) -> InstrumentSfz {
+    let texte = &resoudre_inclusions(texte, dossier, 0);
     // réglages de chaque niveau (global, master, group), puis la région en cours
     let mut niveaux: [Vec<(String, String)>; 3] = Default::default();
     let mut courant: Option<Vec<(String, String)>> = None;
@@ -337,6 +472,8 @@ pub fn lire_sfz(texte: &str, dossier: &Path) -> InstrumentSfz {
                 if en_controle {
                     if nom == "default_path" {
                         chemin_defaut = valeur.replace('\\', "/");
+                    } else if let (Some(cc), Ok(v)) = (nom.strip_prefix("set_cc").and_then(|n| n.parse::<u8>().ok()), valeur.parse::<f32>()) {
+                        resultat.controleurs[cc as usize & 127] = v.clamp(0.0, 127.0) as u8;
                     }
                 } else if let Some(c) = courant.as_mut() {
                     c.push((nom, valeur));
@@ -415,6 +552,35 @@ mod tests {
         assert_eq!(i.regions[1].sequence, (2, 2));
         assert_eq!((i.regions[2].groupe, i.regions[2].coupe), (2, Some(1)));
         assert_eq!(i.regions[3].echantillon, Path::new("kit/grosse.wav"));
+    }
+
+    #[test]
+    fn inclusions_alea_commutation_courbe_et_controleurs() {
+        let d = std::env::temp_dir().join(format!("song-audio-sfz-inclusions-{}", std::process::id()));
+        std::fs::create_dir_all(d.join("legato")).unwrap();
+        std::fs::write(
+            d.join("legato/tenu.sfz"),
+            "<group> sw_last=26 lorand=0 hirand=0.5\n<region> sample=../Samples/a.wav key=40\n<group> sw_last=26 lorand=0.5 hirand=1\n<region> sample=../Samples/b.wav key=40",
+        )
+        .unwrap();
+        let principal = "<control> set_cc7=100 set_cc72=127 default_path=Samples/\n<global> sw_lokey=24 sw_hikey=26 sw_default=25 amplitude_oncc7=100 amp_velcurve_64=0.3 amp_velcurve_127=1\n#include \"legato/tenu.sfz\"\n<group> locc1=64 hicc1=127\n<region> sample=c.wav key=41";
+        std::fs::write(d.join("i.sfz"), principal).unwrap();
+        let i = lire_sfz(principal, &d);
+        assert_eq!(inclusions(principal), vec!["legato/tenu.sfz".to_string()]);
+        assert_eq!(i.regions.len(), 3);
+        assert_eq!(i.controleurs[7], 100);
+        let a = &i.regions[0];
+        assert_eq!((a.alea, a.commutateur, a.commutation, a.commutateur_defaut), ((0.0, 0.5), Some(26), Some((24, 26)), Some(25)));
+        assert_eq!(i.regions[1].alea, (0.5, 1.0));
+        assert!((a.gain_amplitude(&i.controleurs) - 100.0 / 127.0).abs() < 1e-5);
+        assert_eq!(a.gain_courbe(64), Some(0.3));
+        assert!((a.gain_courbe(32).unwrap() - 0.15).abs() < 1e-5, "interpolée entre (0, 0) et (64, 0,3)");
+        assert_eq!(a.gain_courbe(127), Some(1.0));
+        // cc1 vaut 0 au départ : la région « locc1=64 » ne joue pas
+        assert_eq!(i.regions[2].plages_cc, vec![(1, 64, 127)]);
+        assert!(!i.regions[2].dans_les_plages(&i.controleurs));
+        assert!(a.dans_les_plages(&i.controleurs));
+        std::fs::remove_dir_all(&d).ok();
     }
 
     #[test]

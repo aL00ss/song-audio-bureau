@@ -100,7 +100,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Favoris, recherche, étiquettes | Favorites, search, tags | Favoris, recherche, étiquettes | ⬜ | N |
 | Contenu du projet (sons, greffons, patterns) | Current project | Contenu du projet | ⬜ | N |
 | Base de greffons et de préréglages | Plugin database | Base des instruments et effets | ⬜ | M, N |
-| Bibliothèque de sons en ligne | FL Cloud Sounds (2 millions de sons) | Banques libres téléchargées (CC0, CC BY) | ⛔ → banques libres | D |
+| Bibliothèque de sons en ligne | FL Cloud Sounds (2 millions de sons) | Banques libres téléchargées depuis le navigateur (14 banques SFZ, CC0, CC BY) | ✅ (banques libres) | D |
 | Trouver des sons semblables | Find similar samples (2025.2) | Recherche par ressemblance (analyse locale) | ⬜ | N |
 | Instruments et synthés intégrés à ajouter | Add channel | Liste des instruments et synthés | ✅ | N0 |
 | Démarrage par boucles assorties | Loop Starter | Démarreur d'idées (boucles et sons assortis, banques libres) | ⬜ | N |
@@ -239,7 +239,7 @@ Chaque instrument de FL Studio, sa fonction, et son équivalent prévu (nom à n
 | MIDI Out | Pilotage d'appareils MIDI | Sortie MIDI | ⬜ | K |
 | Mobile Rack (2025) | Instruments de FL Mobile | — (nos instruments) | ⛔ | — |
 | Greffons VST2/VST3/CLAP/AU | Instruments tiers | Accueil CLAP, VST3 (processus séparé) | ⬜ | M |
-| Orchestre | (greffons tiers) | Banques VSCO 2, VCSL, Iowa | 🟡 (VSCO allégé) | D |
+| Orchestre | (greffons tiers) | Banques VSCO 2, VCSL, Iowa | 🟡 (VSCO allégé fourni ; VSCO 2 et VCSL complets à télécharger) | D |
 | Synthé de basse « 808 » | (préréglages) | Basse 808 à glissando | ⬜ | J |
 
 ## 11. Effets

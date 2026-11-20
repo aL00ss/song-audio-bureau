@@ -12,12 +12,49 @@ use crate::source::Source;
 /// Voix jouables en même temps par un canal échantillonneur.
 pub const VOIX_MAX: usize = 64;
 
+/// Les valeurs d'un échantillon : gardées en 16 bits quand le fichier l'est (deux fois moins de
+/// mémoire, sans rien perdre), en flottants sinon.
+#[derive(Debug, PartialEq)]
+pub enum Donnees {
+    Entiers(Vec<i16>),
+    Flottants(Vec<f32>),
+}
+
+impl Donnees {
+    pub fn len(&self) -> usize {
+        match self {
+            Donnees::Entiers(v) => v.len(),
+            Donnees::Flottants(v) => v.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Mémoire occupée, en octets.
+    pub fn octets(&self) -> usize {
+        match self {
+            Donnees::Entiers(v) => v.len() * 2,
+            Donnees::Flottants(v) => v.len() * 4,
+        }
+    }
+
+    #[inline]
+    fn valeur(&self, i: usize) -> f32 {
+        match self {
+            Donnees::Entiers(v) => v[i] as f32 * (1.0 / 32768.0),
+            Donnees::Flottants(v) => v[i],
+        }
+    }
+}
+
 /// Un échantillon en mémoire : trames entrelacées (1 ou 2 voies), entre -1 et 1.
 #[derive(Debug, PartialEq)]
 pub struct Echantillon {
     pub frequence: u32,
     pub voies: usize,
-    pub donnees: Vec<f32>,
+    pub donnees: Donnees,
     /// Boucle trouvée dans le fichier (bloc « smpl » d'un WAV), en trames.
     pub boucle: Option<(u64, u64)>,
 }
@@ -43,10 +80,10 @@ impl Echantillon {
     #[inline]
     fn trame(&self, i: usize) -> (f32, f32) {
         if self.voies == 1 {
-            let v = self.donnees[i];
+            let v = self.donnees.valeur(i);
             (v, v)
         } else {
-            (self.donnees[i * self.voies], self.donnees[i * self.voies + 1])
+            (self.donnees.valeur(i * self.voies), self.donnees.valeur(i * self.voies + 1))
         }
     }
 }
@@ -59,8 +96,13 @@ pub fn charger_echantillon(chemin: &Path) -> Result<Echantillon, String> {
         "flac" => {
             let mut lecteur = claxon::FlacReader::open(chemin).map_err(|e| erreur(e.to_string()))?;
             let info = lecteur.streaminfo();
-            let echelle = 1.0 / (1u64 << (info.bits_per_sample - 1)) as f32;
-            let donnees = lecteur.samples().map(|s| s.map(|v| v as f32 * echelle)).collect::<Result<Vec<_>, _>>().map_err(|e| erreur(e.to_string()))?;
+            let donnees = if info.bits_per_sample <= 16 {
+                let decalage = 16 - info.bits_per_sample;
+                Donnees::Entiers(lecteur.samples().map(|s| s.map(|v| (v << decalage) as i16)).collect::<Result<Vec<_>, _>>().map_err(|e| erreur(e.to_string()))?)
+            } else {
+                let echelle = 1.0 / (1u64 << (info.bits_per_sample - 1)) as f32;
+                Donnees::Flottants(lecteur.samples().map(|s| s.map(|v| v as f32 * echelle)).collect::<Result<Vec<_>, _>>().map_err(|e| erreur(e.to_string()))?)
+            };
             Ok(Echantillon { frequence: info.sample_rate, voies: info.channels as usize, donnees, boucle: None })
         }
         _ => {
@@ -69,10 +111,14 @@ pub fn charger_echantillon(chemin: &Path) -> Result<Echantillon, String> {
             let mut lecteur = hound::WavReader::new(std::io::Cursor::new(octets)).map_err(|e| erreur(e.to_string()))?;
             let spec = lecteur.spec();
             let donnees = match spec.sample_format {
-                hound::SampleFormat::Float => lecteur.samples::<f32>().collect::<Result<Vec<_>, _>>(),
+                hound::SampleFormat::Float => lecteur.samples::<f32>().collect::<Result<Vec<_>, _>>().map(Donnees::Flottants),
+                hound::SampleFormat::Int if spec.bits_per_sample <= 16 => {
+                    let decalage = 16 - spec.bits_per_sample;
+                    lecteur.samples::<i32>().map(|s| s.map(|v| (v << decalage) as i16)).collect::<Result<Vec<_>, _>>().map(Donnees::Entiers)
+                }
                 hound::SampleFormat::Int => {
                     let echelle = 1.0 / (1u64 << (spec.bits_per_sample - 1)) as f32;
-                    lecteur.samples::<i32>().map(|s| s.map(|v| v as f32 * echelle)).collect()
+                    lecteur.samples::<i32>().map(|s| s.map(|v| v as f32 * echelle)).collect::<Result<Vec<_>, _>>().map(Donnees::Flottants)
                 }
             }
             .map_err(|e| erreur(e.to_string()))?;
@@ -100,18 +146,22 @@ fn boucle_wav(o: &[u8]) -> Option<(u64, u64)> {
     None
 }
 
-/// Une région prête à jouer : ses réglages et son échantillon.
+/// Une région prête à jouer : ses réglages, son échantillon et son gain fixe (amplitude et
+/// contrôleurs à leur valeur de départ).
 #[derive(Debug)]
 pub struct Zone {
     pub region: Region,
     pub echantillon: Arc<Echantillon>,
+    pub gain: f32,
 }
 
-/// Un instrument chargé : ses zones.
+/// Un instrument chargé : ses zones, et ses touches de changement d'articulation.
 #[derive(Debug, Default)]
 pub struct InstrumentEchantillons {
     pub nom: String,
     pub zones: Vec<Zone>,
+    pub commutation: Option<(u8, u8)>,
+    pub commutateur_defaut: Option<u8>,
 }
 
 impl InstrumentEchantillons {
@@ -121,10 +171,14 @@ impl InstrumentEchantillons {
         let texte = std::fs::read_to_string(chemin).map_err(|e| format!("{} : {e}", chemin.display()))?;
         let dossier = chemin.parent().unwrap_or(Path::new("."));
         let sfz = lire_sfz(&texte, dossier);
+        let controleurs = sfz.controleurs;
+        let commutation = sfz.regions.iter().find_map(|r| r.commutation);
+        let commutateur_defaut = sfz.regions.iter().find_map(|r| r.commutateur_defaut);
         let mut avertissements = Vec::new();
         let mut lus: HashMap<PathBuf, Arc<Echantillon>> = HashMap::new();
         let mut zones = Vec::new();
-        for region in sfz.regions {
+        // les régions hors des plages de contrôleurs (à leur valeur de départ) ne jouent pas
+        for region in sfz.regions.into_iter().filter(|r| r.dans_les_plages(&controleurs)) {
             let echantillon = match lus.get(&region.echantillon) {
                 Some(e) => e.clone(),
                 None => match charger_echantillon(&region.echantillon) {
@@ -139,13 +193,14 @@ impl InstrumentEchantillons {
                     }
                 },
             };
-            zones.push(Zone { region, echantillon });
+            let gain = region.gain_amplitude(&controleurs);
+            zones.push(Zone { region, echantillon, gain });
         }
         if zones.is_empty() {
             return Err(format!("{} : aucun échantillon lisible", chemin.display()));
         }
         let nom = chemin.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        Ok((InstrumentEchantillons { nom, zones }, avertissements))
+        Ok((InstrumentEchantillons { nom, zones, commutation, commutateur_defaut }, avertissements))
     }
 }
 
@@ -211,6 +266,10 @@ pub struct Echantillonneur {
     /// Touches tenues : début (en échantillons rendus) et vélocité, pour les relâchements.
     tenues: [Option<(u64, u8)>; 128],
     horloge: u64,
+    /// Articulation choisie par la dernière touche de commutation.
+    commutateur: Option<u8>,
+    /// État du tirage au sort des prises (xorshift).
+    alea: u32,
 }
 
 impl Echantillonneur {
@@ -225,13 +284,24 @@ impl Echantillonneur {
             alternances: [0; 128],
             tenues: [None; 128],
             horloge: 0,
+            commutateur: None,
+            alea: 0x9E37_79B9,
         }
+    }
+
+    /// Tirage au sort entre 0 et 1 (sans allocation, pour le fil audio).
+    fn tirage(&mut self) -> f32 {
+        self.alea ^= self.alea << 13;
+        self.alea ^= self.alea >> 17;
+        self.alea ^= self.alea << 5;
+        (self.alea >> 8) as f32 / (1u32 << 24) as f32
     }
 
     /// Change d'instrument (hors du fil audio, ou en lui donnant un Arc déjà prêt : rien n'est
     /// alloué). Les voix en cours se taisent.
     pub fn changer_instrument(&mut self, instrument: Option<Arc<InstrumentEchantillons>>) -> Option<Arc<InstrumentEchantillons>> {
         self.tout_couper();
+        self.commutateur = instrument.as_ref().and_then(|i| i.commutateur_defaut);
         std::mem::replace(&mut self.instrument, instrument)
     }
 
@@ -260,8 +330,8 @@ impl Echantillonneur {
         // volume : réglage, vélocité (courbe en carré), panoramique à puissance constante
         let v = velocite as f32 / 127.0;
         let suivi = r.suivi_velocite / 100.0;
-        let gain_vel = (1.0 - suivi) + suivi * v * v;
-        let gain = 10f32.powf((r.volume_db - attenuation_db) / 20.0) * gain_vel;
+        let gain_vel = r.gain_courbe(velocite).unwrap_or((1.0 - suivi) + suivi * v * v);
+        let gain = 10f32.powf((r.volume_db - attenuation_db) / 20.0) * gain_vel * zone.gain;
         let p = ((r.pan / 100.0 + self.pan).clamp(-1.0, 1.0) + 1.0) * std::f32::consts::FRAC_PI_4;
         // une voix libre, sinon la plus ancienne
         let index = self.voix.iter().position(|v| !v.active).unwrap_or_else(|| (0..VOIX_MAX).min_by_key(|&i| self.voix[i].age).unwrap_or(0));
@@ -285,6 +355,8 @@ impl Echantillonneur {
     /// Zones qui conviennent à cette touche, cette vélocité et ce déclenchement (en tenant
     /// compte de l'alternance des prises).
     fn zones_pour(&mut self, hauteur: u8, velocite: u8, declenchement: Declenchement) -> ([usize; 16], usize) {
+        let tirage = self.tirage();
+        let commutateur = self.commutateur;
         let mut choisies = [0usize; 16];
         let mut n = 0;
         let Some(instrument) = &self.instrument else { return (choisies, 0) };
@@ -300,6 +372,10 @@ impl Echantillonneur {
                 _ => false,
             };
             if !convient || hauteur < r.touche_basse || hauteur > r.touche_haute || velocite < r.velocite_basse || velocite > r.velocite_haute {
+                continue;
+            }
+            // une seule des prises tirées au sort, et seulement l'articulation choisie
+            if tirage < r.alea.0 || tirage >= r.alea.1 || (r.commutateur.is_some() && r.commutateur != commutateur) {
                 continue;
             }
             if r.sequence.0 > 1 {
@@ -333,6 +409,13 @@ impl Source for Echantillonneur {
     fn note_on(&mut self, hauteur: u8, velocite: u8) {
         if velocite == 0 {
             return self.note_off(hauteur);
+        }
+        // une touche de commutation change d'articulation, sans jouer
+        if let Some((bas, haut)) = self.instrument.as_ref().and_then(|i| i.commutation) {
+            if (bas..=haut).contains(&hauteur) {
+                self.commutateur = Some(hauteur);
+                return;
+            }
         }
         let (zones, n) = self.zones_pour(hauteur, velocite, Declenchement::Attaque);
         self.tenues[hauteur as usize & 127] = Some((self.horloge, velocite));
@@ -600,6 +683,43 @@ mod tests {
         rendre(&mut e, 0.1);
         e.note_off(60);
         assert_eq!(e.voix(), 1, "le bruit de relâchement joue");
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn prises_au_hasard_et_touches_de_commutation() {
+        let d = dossier("hasard");
+        for (nom, f) in [("a.wav", 300.0), ("b.wav", 600.0), ("staccato.wav", 1000.0)] {
+            ecrire_wav(&d.join(nom), f, 44100, None);
+        }
+        let sfz = "<global> sw_lokey=24 sw_hikey=25 sw_default=24
+            <group> sw_last=24 <region> sample=a.wav key=60 lorand=0 hirand=0.5 pitch_keytrack=0
+            <region> sample=b.wav key=60 lorand=0.5 hirand=1 pitch_keytrack=0
+            <group> sw_last=25 <region> sample=staccato.wav key=60 pitch_keytrack=0";
+        let i = instrument(sfz, &d);
+        assert_eq!((i.commutation, i.commutateur_defaut), (Some((24, 25)), Some(24)));
+        let mut e = Echantillonneur::new(44100);
+        e.changer_instrument(Some(i));
+        // une seule prise à la fois, et les deux finissent par sortir
+        let (mut a, mut b) = (0, 0);
+        for _ in 0..40 {
+            e.note_on(60, 100);
+            assert_eq!(e.voix(), 1, "une seule prise par note");
+            let f = frequence(&rendre(&mut e, 0.05));
+            if (f - 300.0).abs() < 40.0 {
+                a += 1;
+            } else if (f - 600.0).abs() < 40.0 {
+                b += 1;
+            }
+            e.tout_couper();
+        }
+        assert_eq!(a + b, 40);
+        assert!(a > 5 && b > 5, "tirage équilibré : {a} / {b}");
+        // touche 25 : l'articulation staccato ; la touche elle-même ne sonne pas
+        e.note_on(25, 100);
+        assert_eq!(e.voix(), 0);
+        e.note_on(60, 100);
+        assert!((frequence(&rendre(&mut e, 0.05)) - 1000.0).abs() < 40.0);
         std::fs::remove_dir_all(&d).ok();
     }
 

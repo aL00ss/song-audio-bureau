@@ -283,6 +283,29 @@ La reconstruction native est terminée. Suite : les phases D à O ci-dessous, ve
   4 tests SFZ, 4 tests de l'échantillonneur (hauteur, couches, boucle tenue, relâchement,
   alternance, coupe, bruit de relâchement, échantillons manquants), 1 test du projet, 2 tests
   d'interface (joué par le vrai moteur, hauteur juste dans l'export WAV, gardé dans le projet).
+- [x] **D3 — Banques de sons à télécharger** : catalogue de 14 bibliothèques professionnelles
+  gratuites au format SFZ, licences vérifiées (CC0, CC BY) : Salamander Grand Piano V3 complet
+  (48 kHz 24 bits, freepats), Osiris Piano, VSCO 2 CE complet et VCSL (archives officielles de
+  Versilian Studios, avec leurs SFZ), Naked Drums, Big Rusty Drums, DrumGizmo DRS Kit, basses
+  et guitares de Karoryfer, violoncelle, contrebasse, saxophones du MTG, tuba (dépôts de
+  l'organisation sfzinstruments). Téléchargement dans un fil à part avec progression,
+  annulation et reprise (en-tête Range ; si le serveur l'ignore, on recommence), extraction des
+  zip et tar.gz dans le dossier des données, puis la liste des instruments de la banque (les
+  fichiers seulement inclus par d'autres en sont écartés). Section « Banques de sons » du
+  navigateur, par famille : télécharger, reprendre, annuler, ajouter un instrument au rack,
+  supprimer la banque ; les banques installées et leurs licences s'ajoutent aux crédits. Le
+  lecteur SFZ suit les vraies banques : #include, choix des prises au hasard (lorand, hirand),
+  touches de changement d'articulation (sw_lokey, sw_hikey, sw_last, sw_default), courbes de
+  vélocité (amp_velcurve), amplitude selon les contrôleurs à leur valeur de départ (set_ccN,
+  amplitude_onccN), plages de contrôleurs (locc, hicc) ; échantillons 16 bits gardés en
+  16 bits (deux fois moins de mémoire). Vérifié sur une vraie banque téléchargée depuis GitHub
+  (War Tuba : 7 instruments, 2 766 zones, aucun échantillon illisible, une note = 2 voix, les
+  deux micros, 114 Mo). Tests : 4 contre un serveur HTTP local (zip, tar.gz, reprise après une
+  coupure à la bonne position, annulation, archive sans instrument), 1 d'interface
+  (télécharger depuis le navigateur puis ajouter l'instrument), 1 sur le vrai réseau (lancé à
+  la main avec RESEAU=1), 1 du catalogue, 2 du lecteur SFZ. Pas encore pris en compte : filtres,
+  égaliseurs et LFO des fichiers SFZ, contrôleurs MIDI en temps réel, lecture depuis le disque
+  pour les très grandes banques (Salamander complet, VSCO 2 complet : plusieurs Go en mémoire).
 
 ## Phases
 
