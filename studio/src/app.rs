@@ -626,8 +626,11 @@ impl Studio {
 
     pub fn instruments(&mut self, ui: &mut egui::Ui) {
         ui.label(RichText::new("INSTRUMENTS").small().strong().color(theme::DISCRET));
-        if ui.button("+ Batterie").on_hover_text("Une ligne de batterie, en pas à pas").clicked() {
+        if glissable(ui, "+ Batterie", crate::rack::SonGlisse::Batterie).on_hover_text("Une ligne de batterie, en pas à pas (ou glissez-la sur le rack)").clicked() {
             self.ajouter_canal(OptionsCanal { batterie: true, ..Default::default() });
+        }
+        if ui.button("+ Couche").on_hover_text("Un canal sans son propre qui joue plusieurs instruments à la fois").clicked() {
+            self.ajouter_canal(OptionsCanal { source: SourceCanal::Couche, nom: Some("Couche".into()), ..Default::default() });
         }
         if ui.button("+ Échantillonneur (SFZ)…").on_hover_text("Un instrument fait d'échantillons : un fichier SFZ et ses sons").clicked() {
             if let Some(c) = rfd::FileDialog::new().set_title("Choisir un instrument SFZ").add_filter("Instrument SFZ", &["sfz"]).pick_file() {
@@ -636,7 +639,7 @@ impl Studio {
         }
         egui::CollapsingHeader::new(RichText::new("Synthés intégrés").color(theme::ACCENT)).default_open(true).show(ui, |ui| {
             for (i, p) in PREREGLAGES_SOUSTRACTIF.iter().enumerate() {
-                if ui.button(format!("+ {}", p.nom)).clicked() {
+                if glissable(ui, &format!("+ {}", p.nom), crate::rack::SonGlisse::Synthe(i as u8)).clicked() {
                     self.ajouter_canal(OptionsCanal { source: SourceCanal::Soustractif, programme: i as u8, ..Default::default() });
                 }
             }
@@ -644,7 +647,7 @@ impl Studio {
         for (f, famille) in FAMILLES.iter().enumerate() {
             egui::CollapsingHeader::new(*famille).show(ui, |ui| {
                 for programme in (f * 8) as u8..(f * 8 + 8) as u8 {
-                    if ui.button(format!("+ {}", nom_instrument(programme))).clicked() {
+                    if glissable(ui, &format!("+ {}", nom_instrument(programme)), crate::rack::SonGlisse::GeneralMidi(programme)).clicked() {
                         self.ajouter_canal(OptionsCanal { programme, ..Default::default() });
                     }
                 }
@@ -653,10 +656,25 @@ impl Studio {
     }
 }
 
+/// Un bouton du navigateur qu'on peut aussi glisser sur le rack (nouveau canal) ou sur le nom
+/// d'un canal (son remplacé).
+pub(crate) fn glissable(ui: &mut egui::Ui, texte: &str, son: crate::rack::SonGlisse) -> egui::Response {
+    let r = ui.add(egui::Button::new(texte).sense(egui::Sense::click_and_drag()));
+    r.dnd_set_drag_payload(son);
+    if r.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    r
+}
+
 pub(crate) fn famille_ou_synthe(canal: &projet::Canal) -> String {
     match canal.source {
         SourceCanal::Soustractif => "Synthé intégré".into(),
         SourceCanal::Soundfont => format!("{} ({})", nom_instrument(canal.programme), famille_instrument(canal.programme)),
+        SourceCanal::Couche => {
+            let n = canal.enfants.len();
+            format!("Couche : {n} instrument{}", if n > 1 { "s" } else { "" })
+        }
         SourceCanal::Echantillons => {
             let fichier = canal.instrument.as_deref().map(|c| Path::new(c).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).unwrap_or_default();
             format!("Échantillonneur : {fichier}")

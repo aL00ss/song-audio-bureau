@@ -119,10 +119,17 @@ impl Studio {
 
     fn envoyer_note(&mut self, canal: &str, message: Message, delai_secondes: f64) {
         self.synchroniser(); // un canal tout juste ajouté doit exister dans le moteur
-        let Some(rang) = self.rang(canal) else { return };
+        // une couche n'a pas de son : la note part vers chacun de ses enfants
+        let rangs: Vec<u32> = match self.projet.canal(canal) {
+            Some(c) if c.source == projet::SourceCanal::Couche => c.enfants.iter().filter_map(|e| self.rang(e)).collect(),
+            Some(_) => self.rang(canal).into_iter().collect(),
+            None => Vec::new(),
+        };
         if let Some(m) = self.moteur_mut() {
             let echantillon = m.horloge() + (delai_secondes * m.frequence() as f64) as u64;
-            m.programmer(Evenement { echantillon, canal: rang, message });
+            for rang in rangs {
+                m.programmer(Evenement { echantillon, canal: rang, message });
+            }
         }
     }
 

@@ -480,7 +480,9 @@ impl Studio {
                 for chemin in instruments(racine, b.id) {
                     let nom = chemin.strip_prefix(&dossier).unwrap_or(&chemin).with_extension("").to_string_lossy().replace('\\', "/");
                     let court = nom.rsplit('/').next().unwrap_or(&nom).to_string();
-                    if ui.add(egui::Button::new(format!("+ {court}")).frame(false)).on_hover_text(nom).clicked() {
+                    let bouton = ui.add(egui::Button::new(format!("+ {court}")).frame(false).sense(egui::Sense::click_and_drag())).on_hover_text(nom);
+                    bouton.dnd_set_drag_payload(crate::rack::SonGlisse::Sfz(chemin.clone()));
+                    if bouton.clicked() {
                         self.ajouter_echantillonneur(&chemin);
                     }
                 }

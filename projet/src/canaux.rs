@@ -44,6 +44,16 @@ pub fn cloner_canal(projet: &mut Projet, id: &str) -> Option<String> {
     Some(nouvel)
 }
 
+/// Ajoute ou retire un enfant d'une couche (une couche ne contient pas de couche).
+pub fn definir_enfant(projet: &mut Projet, couche: &str, enfant: &str, present: bool) {
+    let enfant_valable = projet.canal(enfant).is_some_and(|c| c.source != SourceCanal::Couche) && couche != enfant;
+    let Some(c) = projet.canal_mut(couche).filter(|c| c.source == SourceCanal::Couche) else { return };
+    c.enfants.retain(|e| e != enfant);
+    if present && enfant_valable {
+        c.enfants.push(enfant.to_string());
+    }
+}
+
 /// Retire le canal et ses notes de tous les patterns. Sa piste de mixage reste (d'autres
 /// canaux peuvent y être routés). Faux si le canal n'existe pas.
 pub fn supprimer_canal(projet: &mut Projet, id: &str) -> bool {
@@ -51,6 +61,10 @@ pub fn supprimer_canal(projet: &mut Projet, id: &str) -> bool {
     projet.canaux.remove(r);
     for pattern in projet.patterns.iter_mut() {
         pattern.notes.remove(id);
+    }
+    // il quitte les couches où il était
+    for c in projet.canaux.iter_mut() {
+        c.enfants.retain(|e| e != id);
     }
     true
 }
@@ -198,6 +212,36 @@ mod tests {
         // une batterie ne change pas de son ici (son de batterie : la liste du rack)
         remplacer_son(&mut p, &a, SourceCanal::Soundfont, 10);
         assert_eq!(p.canal(&a).unwrap().programme, 0);
+    }
+
+    #[test]
+    fn couches_leurs_enfants_et_la_lecture() {
+        use crate::lecture::{ModeLecture, notes_a_jouer};
+        let (mut p, [a, b, c]) = trois();
+        let couche = p.ajouter_canal(OptionsCanal { source: SourceCanal::Couche, nom: Some("Couche".into()), ..Default::default() });
+        definir_enfant(&mut p, &couche, &b, true);
+        definir_enfant(&mut p, &couche, &c, true);
+        definir_enfant(&mut p, &couche, &couche, true); // elle-même : refusé
+        let autre = p.ajouter_canal(OptionsCanal { source: SourceCanal::Couche, ..Default::default() });
+        definir_enfant(&mut p, &couche, &autre, true); // une couche : refusée
+        assert_eq!(p.canal(&couche).unwrap().enfants, vec![b.clone(), c.clone()]);
+        // une note de la couche joue sur B et C (rangs 1 et 2), pas sur la couche
+        p.pattern_actif_mut().notes.insert(couche.clone(), vec![NoteMusicale { tic: 0, duree: 96, hauteur: 60, velocite: 100, ..Default::default() }]);
+        let rangs: Vec<u32> = notes_a_jouer(&p, ModeLecture::Pattern).0.iter().map(|n| n.canal).collect();
+        assert_eq!(rangs, vec![1, 2]);
+        // un enfant muet se tait ; la couche muette fait tout taire
+        p.canal_mut(&b).unwrap().muet = true;
+        assert_eq!(notes_a_jouer(&p, ModeLecture::Pattern).0.iter().map(|n| n.canal).collect::<Vec<_>>(), vec![2]);
+        p.canal_mut(&b).unwrap().muet = false;
+        p.canal_mut(&couche).unwrap().muet = true;
+        assert!(notes_a_jouer(&p, ModeLecture::Pattern).0.is_empty());
+        p.canal_mut(&couche).unwrap().muet = false;
+        // supprimer un enfant le retire de la couche ; le fichier garde la couche
+        supprimer_canal(&mut p, &b);
+        assert_eq!(p.canal(&couche).unwrap().enfants, vec![c.clone()]);
+        definir_enfant(&mut p, &couche, &c, false);
+        definir_enfant(&mut p, &couche, &a, true);
+        assert_eq!(deserialiser(&serialiser(&p)).unwrap(), p);
     }
 
     #[test]

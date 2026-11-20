@@ -34,6 +34,54 @@ pub struct Peinture {
     pub actif: bool,
 }
 
+/// Un son glissé depuis le navigateur.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SonGlisse {
+    GeneralMidi(u8),
+    Synthe(u8),
+    Batterie,
+    Sfz(std::path::PathBuf),
+}
+
+impl Studio {
+    /// Ajoute un canal qui joue ce son.
+    pub fn ajouter_son(&mut self, son: &SonGlisse) {
+        match son {
+            SonGlisse::GeneralMidi(programme) => self.ajouter_canal(projet::OptionsCanal { programme: *programme, ..Default::default() }),
+            SonGlisse::Synthe(i) => self.ajouter_canal(projet::OptionsCanal { source: SourceCanal::Soustractif, programme: *i, ..Default::default() }),
+            SonGlisse::Batterie => self.ajouter_canal(projet::OptionsCanal { batterie: true, ..Default::default() }),
+            SonGlisse::Sfz(chemin) => self.ajouter_echantillonneur(chemin),
+        }
+    }
+
+    /// Remplace le son d'un canal mélodique par ce son (une batterie ou une couche ne change pas).
+    pub fn remplacer_par(&mut self, canal: &str, son: &SonGlisse) {
+        let id = canal.to_string();
+        let son = son.clone();
+        self.modifier(|p| {
+            let Some(c) = p.canal(&id).cloned() else { return };
+            if c.batterie || c.source == SourceCanal::Couche {
+                return;
+            }
+            match son {
+                SonGlisse::GeneralMidi(programme) => remplacer_son(p, &id, SourceCanal::Soundfont, programme),
+                SonGlisse::Synthe(i) => remplacer_son(p, &id, SourceCanal::Soustractif, i),
+                SonGlisse::Batterie => {}
+                SonGlisse::Sfz(chemin) => {
+                    let nom_auto = c.nom == projet::modele::nom_du_son(c.source, c.programme);
+                    if let Some(x) = p.canal_mut(&id) {
+                        x.source = SourceCanal::Echantillons;
+                        x.instrument = Some(chemin.to_string_lossy().to_string());
+                        if nom_auto {
+                            x.nom = chemin.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
 /// Canaux montrés par le rack.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum FiltreGroupe {
@@ -190,6 +238,10 @@ impl Studio {
                             if reponse.double_clicked() || reponse.triple_clicked() {
                                 self.renommage = Some((canal.id.clone(), canal.nom.clone()));
                             }
+                            // un son lâché sur le nom remplace celui du canal
+                            if let Some(son) = reponse.dnd_release_payload::<SonGlisse>() {
+                                self.remplacer_par(&canal.id, &son);
+                            }
                             reponse.context_menu(|ui| self.menu_canal(ui, canal, rang));
                         }
                         // son de batterie, si le canal est en pas
@@ -226,6 +278,17 @@ impl Studio {
             },
         );
         let vue = sortie.inner_rect;
+
+        // un son lâché ailleurs sur le rack : un nouveau canal ; pendant le glisser, le rack s'éclaire
+        let zone_rack = ui.min_rect();
+        if egui::DragAndDrop::has_payload_of_type::<SonGlisse>(ui.ctx()) && ui.rect_contains_pointer(zone_rack) {
+            ui.painter().rect_stroke(zone_rack, 3.0, Stroke::new(2.0, theme::ACCENT), egui::StrokeKind::Inside);
+            if ui.input(|i| i.pointer.any_released()) {
+                if let Some(son) = egui::DragAndDrop::take_payload::<SonGlisse>(ui.ctx()) {
+                    self.ajouter_son(&son);
+                }
+            }
+        }
 
         // éditeur de vélocité du canal choisi, s'il est en pas
         let choisi = self.canal_selectionne.clone().and_then(|id| self.projet.canal(&id).cloned());
@@ -275,6 +338,18 @@ impl Studio {
     /// Menu d'un canal (clic droit sur son nom).
     fn menu_canal(&mut self, ui: &mut egui::Ui, canal: &projet::Canal, rang: usize) {
         let id = canal.id.clone();
+        if canal.source == SourceCanal::Couche {
+            ui.menu_button("Couche", |ui| {
+                ui.label(RichText::new("Instruments que joue cette couche").small().color(theme::DISCRET));
+                for autre in self.projet.canaux.clone().iter().filter(|c| c.source != SourceCanal::Couche) {
+                    let mut dedans = canal.enfants.contains(&autre.id);
+                    if ui.checkbox(&mut dedans, &autre.nom).changed() {
+                        let (couche, enfant) = (id.clone(), autre.id.clone());
+                        self.modifier(|p| projet::canaux::definir_enfant(p, &couche, &enfant, dedans));
+                    }
+                }
+            });
+        }
         if ui.button("Ouvrir dans le piano roll").clicked() {
             self.canal_selectionne = Some(id.clone());
             self.montrer_panneau(crate::coquille::Panneau::PianoRoll);

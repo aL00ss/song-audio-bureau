@@ -328,6 +328,16 @@ La reconstruction native est terminée. Suite : les phases D à O ci-dessous, ve
   est gardée pour les instruments qui sauront s'en servir. Tests : modèle (lecture, fichier),
   synthé (note tout à gauche, un demi-ton plus haut), interface (panoramique au pas, retour au
   centre).
+- [x] **E3 — Couches et glisser-déposer** : canal « couche » (sans son propre) dont les notes
+  jouent sur les canaux choisis (menu « Couche » : cases à cocher ; une couche ne contient pas de
+  couche ; un canal supprimé la quitte ; enfant muet : il se tait ; couche muette : tout se tait),
+  en lecture comme en jeu direct (l'enregistrement reste sur la couche). Les sons du navigateur
+  (instruments General MIDI, synthés intégrés, batterie, instruments des banques) se glissent :
+  lâchés sur le rack, un nouveau canal ; lâchés sur le nom d'un canal, son son est remplacé (une
+  batterie ou une couche ne change pas) ; le rack s'éclaire pendant le glisser. 1 test du modèle,
+  2 tests d'interface (glisser vers le rack et sur un canal ; couche jouée par le vrai moteur).
+
+Phase E terminée, sauf les modulations X/Y par pas (avec l'automatisation, phase K).
 
 ## Phases
 

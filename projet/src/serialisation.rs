@@ -132,6 +132,7 @@ fn lire_canal(v: &Value, chemin: &str) -> R<Canal> {
         source: match (batterie, o.get("source").and_then(Value::as_str)) {
             (false, Some("soustractif")) => SourceCanal::Soustractif,
             (_, Some("echantillons")) => SourceCanal::Echantillons,
+            (_, Some("couche")) => SourceCanal::Couche,
             _ => SourceCanal::Soundfont,
         },
         instrument: match o.get("instrument") {
@@ -145,6 +146,10 @@ fn lire_canal(v: &Value, chemin: &str) -> R<Canal> {
         groupe: match o.get("groupe") {
             None | Some(Value::Null) => None,
             Some(v) => Some(texte(v, &format!("{chemin}.groupe"))?),
+        },
+        enfants: match o.get("enfants") {
+            None => Vec::new(),
+            Some(v) => tableau(v, &format!("{chemin}.enfants"))?.iter().enumerate().map(|(i, e)| texte(e, &format!("{chemin}.enfants[{i}]"))).collect::<R<Vec<_>>>()?,
         },
     })
 }
@@ -219,6 +224,11 @@ pub fn deserialiser(json: &str) -> R<Projet> {
     let ids: HashSet<String> = canaux.iter().map(|c| c.id.clone()).collect();
     if ids.len() != canaux.len() {
         return erreur("projet.canaux : identifiants en double".into());
+    }
+    let couches: HashSet<String> = canaux.iter().filter(|c| c.source == SourceCanal::Couche).map(|c| c.id.clone()).collect();
+    let mut canaux = canaux;
+    for c in canaux.iter_mut() {
+        c.enfants.retain(|e| ids.contains(e) && !couches.contains(e));
     }
     let patterns = tableau(champ(o, "patterns"), "projet.patterns")?
         .iter()

@@ -96,7 +96,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 |---|---|---|---|---|
 | Arborescence des dossiers et fichiers | Browser | Navigateur de fichiers | ✅ | N2 |
 | Écoute avant d'ajouter, au tempo | Preview, tempo sync | Écoute synchronisée | ⬜ | D, N |
-| Glisser-déposer partout | Drag and drop | Glisser vers rack, arrangement, piano roll | 🟡 (fichiers sur la fenêtre) | N2, N |
+| Glisser-déposer partout | Drag and drop | Glisser vers rack, arrangement, piano roll | 🟡 (fichiers sur la fenêtre, sons vers le rack) | N2, E, N |
 | Favoris, recherche, étiquettes | Favorites, search, tags | Favoris, recherche, étiquettes | ⬜ | N |
 | Contenu du projet (sons, greffons, patterns) | Current project | Contenu du projet | ⬜ | N |
 | Base de greffons et de préréglages | Plugin database | Base des instruments et effets | ⬜ | M, N |
@@ -123,7 +123,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Couleurs, icônes, noms | Color, icon | Renommer, 16 couleurs ; icônes à venir | 🟡 | N3, E |
 | Cloner, déplacer, supprimer, remplacer | Clone, move, delete, replace | Cloner, monter, descendre, supprimer, remplacer le son | ✅ | N3 |
 | Remplir tous les N pas, décaler, inverser, aléatoire | Fill each N steps, rotate, randomize | Mêmes outils, et effacer | ✅ | E |
-| Couches (un déclenchement joue plusieurs canaux) | Layer channel | Couches | ⬜ | E |
+| Couches (un déclenchement joue plusieurs canaux) | Layer channel | Couches | ✅ | E |
 | Envoyer au piano roll | Send to piano roll | Ouvrir dans le piano roll (menu du canal, clic sur l'aperçu) | ✅ | N4 |
 | Canaux d'automatisation et de clips audio | Automation / audio clip channels | Canaux spéciaux | ⬜ | G, K |
 

@@ -89,7 +89,7 @@ impl Studio {
             ui.label(RichText::new(&canal.nom).strong().color(couleur(&canal.couleur)));
             let son = match canal.source {
                 projet::SourceCanal::Soundfont => format!("{} ({})", nom_instrument(canal.programme), famille_instrument(canal.programme)),
-                projet::SourceCanal::Soustractif | projet::SourceCanal::Echantillons => famille_ou_synthe(canal),
+                projet::SourceCanal::Soustractif | projet::SourceCanal::Echantillons | projet::SourceCanal::Couche => famille_ou_synthe(canal),
             };
             ui.label(RichText::new(son).color(theme::DISCRET));
             ui.separator();

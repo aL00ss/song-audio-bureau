@@ -73,6 +73,8 @@ pub enum SourceCanal {
     Soustractif,
     /// Échantillonneur : un instrument SFZ (chemin dans `Canal::instrument`).
     Echantillons,
+    /// Couche : sans son propre, ses notes jouent sur les canaux de `Canal::enfants`.
+    Couche,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -105,6 +107,9 @@ pub struct Canal {
     /// Groupe du canal, pour filtrer le rack (absent : sans groupe).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub groupe: Option<String>,
+    /// Canaux que joue une couche (identifiants).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enfants: Vec<String>,
 }
 
 fn un() -> f32 {
@@ -267,6 +272,7 @@ pub fn nom_du_son(source: SourceCanal, programme: u8) -> String {
         SourceCanal::Soundfont => nom_instrument(programme).to_string(),
         SourceCanal::Soustractif => crate::synthes::PREREGLAGES_SOUSTRACTIF[programme as usize % crate::synthes::PREREGLAGES_SOUSTRACTIF.len()].nom.to_string(),
         SourceCanal::Echantillons => "Échantillonneur".to_string(),
+        SourceCanal::Couche => "Couche".to_string(),
     }
 }
 
@@ -294,6 +300,7 @@ impl Projet {
             instrument: options.instrument,
             swing: 1.0,
             groupe: None,
+            enfants: Vec::new(),
         });
         id
     }

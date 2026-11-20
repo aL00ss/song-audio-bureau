@@ -36,7 +36,17 @@ pub fn notes_du_pattern(projet: &Projet, pattern: &Pattern) -> Vec<NoteJouee> {
         if !audibles.contains(canal.id.as_str()) {
             continue;
         }
-        let c = rang as u32;
+        // une couche joue ses notes sur chacun de ses enfants (qui sonnent) ; un canal, sur lui-même
+        let rangs: Vec<u32> = if canal.source == crate::modele::SourceCanal::Couche {
+            canal
+                .enfants
+                .iter()
+                .filter_map(|e| projet.canaux.iter().position(|x| &x.id == e && x.source != crate::modele::SourceCanal::Couche && audibles.contains(x.id.as_str())))
+                .map(|r| r as u32)
+                .collect()
+        } else {
+            vec![rang as u32]
+        };
         for n in pattern.notes.get(&canal.id).map(Vec::as_slice).unwrap_or(&[]) {
             if n.tic >= pattern.longueur {
                 continue;
@@ -46,7 +56,9 @@ pub fn notes_du_pattern(projet: &Projet, pattern: &Pattern) -> Vec<NoteJouee> {
             let debut = (n.tic as f64 + decalage).round() as u32;
             let fin = ((n.tic + n.duree) as f64 + decalage).round().min(pattern.longueur as f64) as u32;
             if debut < fin {
-                notes.push(NoteJouee { debut, fin, canal: c, hauteur: n.hauteur, velocite: n.velocite.max(1), pan: n.pan, cents: n.fin });
+                for &c in &rangs {
+                    notes.push(NoteJouee { debut, fin, canal: c, hauteur: n.hauteur, velocite: n.velocite.max(1), pan: n.pan, cents: n.fin });
+                }
             }
         }
     }
