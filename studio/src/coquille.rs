@@ -46,8 +46,7 @@ impl Panneau {
     /// Phase du plan où le contenu complet du panneau arrive (None : déjà là).
     fn a_venir(self) -> Option<&'static str> {
         match self {
-            Panneau::Navigateur | Panneau::Rack | Panneau::PianoRoll | Panneau::Instrument => None,
-            Panneau::Mixage => Some("N5"),
+            Panneau::Navigateur | Panneau::Rack | Panneau::PianoRoll | Panneau::Instrument | Panneau::Mixage => None,
             Panneau::Arrangement => Some("N6"),
         }
     }
@@ -119,6 +118,7 @@ impl TabViewer for Vue<'_> {
             Panneau::Rack => self.studio.rack(ui),
             Panneau::PianoRoll => self.studio.piano_roll(ui),
             Panneau::Instrument => self.studio.vue_instrument(ui),
+            Panneau::Mixage => self.studio.mixeur(ui),
             autre => {
                 ui.add_space(12.0);
                 ui.label(RichText::new(autre.titre()).heading());

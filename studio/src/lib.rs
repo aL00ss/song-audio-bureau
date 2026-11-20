@@ -5,6 +5,7 @@ pub mod app;
 pub mod coquille;
 pub mod instrument;
 pub mod jeu;
+pub mod mixeur;
 pub mod navigateur;
 pub mod piano_roll;
 pub mod pont;

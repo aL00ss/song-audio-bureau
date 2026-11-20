@@ -76,6 +76,14 @@ pub struct Studio {
     pub jeu: crate::jeu::Jeu,
     pub piano_roll: crate::piano_roll::EtatPianoRoll,
     pub instrument: crate::instrument::EtatInstrument,
+    /// Mesures du moteur lues à cette image (les crêtes ne se lisent qu'une fois).
+    pub mesures: moteur::Mesures,
+    /// Niveau affiché de chaque vumètre (avec sa retombée).
+    pub niveaux: Vec<[f32; 2]>,
+    /// Piste du mixer en cours de renommage, et le texte saisi.
+    pub renommage_piste: Option<(usize, String)>,
+    /// Hauteur des réglages d'une tranche (égaliseur, panoramique), mesurée à l'affichage.
+    pub(crate) hauteur_reglages: f32,
 }
 
 impl Studio {
@@ -114,6 +122,10 @@ impl Studio {
             jeu: Default::default(),
             piano_roll: Default::default(),
             instrument: Default::default(),
+            mesures: Default::default(),
+            niveaux: Vec::new(),
+            renommage_piste: None,
+            hauteur_reglages: 70.0,
         }
     }
 
@@ -654,6 +666,8 @@ impl eframe::App for Studio {
         // ← → : octave du clavier, sauf quand le piano roll a le focus (il déplace ses notes)
         let fleches_libres = !self.piano_roll.a_le_focus(&ctx);
         self.lire_clavier(&ctx, fleches_libres);
+        let secondes = ctx.input(|i| i.stable_dt).min(0.1);
+        self.lire_mesures(secondes);
         self.interroger_navigateur(Some(&ctx));
         // fichiers glissés sur la fenêtre : projet ou MIDI
         let deposes: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|c| c.is_absolute()).collect());

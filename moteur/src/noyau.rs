@@ -546,8 +546,8 @@ impl Noyau {
             piste.crete = [piste.crete[0].max(crete[0]), piste.crete[1].max(crete[1])];
         }
 
-        // 4. le maître : réverbération, fader, limiteur
-        let gain = gain_du_fader(maitre.reglage.volume);
+        // 4. le maître : réverbération, fader (coupé si le maître est muet), limiteur
+        let gain = if maitre.reglage.audible { gain_du_fader(maitre.reglage.volume) } else { 0.0 };
         let mut crete = [0f32; 2];
         for i in 0..n {
             let (rg, rd) = self.reverb.traiter(self.envoi[0][i], self.envoi[1][i]);
@@ -745,6 +745,21 @@ pub mod tests {
         assert_eq!(niveau(ReglagePiste { audible: false, ..Default::default() }), (0.0, 0.0));
         let gauche = niveau(ReglagePiste { pan: -1.0, ..Default::default() });
         assert!(gauche.1 < 1e-6 && gauche.0 > normal.0);
+    }
+
+    #[test]
+    fn maitre_muet_plus_rien_ne_sort() {
+        let niveau = |audible: bool| {
+            let mut noyau = Noyau::new(&banque(), FE).unwrap();
+            let mut c = configuration(0, false);
+            c.pistes[0].audible = audible;
+            regler(&mut noyau, &c);
+            note(&mut noyau, 0.0, 60, 1.0);
+            let (g, d) = rendre(&mut noyau, 0.3);
+            (efficace(&g), efficace(&d))
+        };
+        assert!(niveau(true).0 > 0.001);
+        assert_eq!(niveau(false), (0.0, 0.0));
     }
 
     #[test]

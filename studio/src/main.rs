@@ -21,7 +21,7 @@ fn main() -> eframe::Result {
             let mut studio = Studio::depuis_disque();
             studio.reprendre_disposition(cc.storage);
             // un fichier donné en argument (ouvrir avec…) : projet ou MIDI
-            if let Some(chemin) = std::env::args_os().nth(1) {
+            if let Some(chemin) = std::env::args_os().nth(1).filter(|c| !c.is_empty()) {
                 studio.ouvrir_fichier(std::path::Path::new(&chemin));
             }
             Ok(Box::new(studio))

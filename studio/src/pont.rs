@@ -17,7 +17,8 @@ pub fn configuration(projet: &Projet) -> Configuration {
             existe: true,
             volume: piste.volume,
             pan: piste.pan,
-            audible: piste.index == 0 || audibles.contains(&piste.index),
+            // le maître n'est pas concerné par le solo, mais il peut être coupé
+            audible: if piste.index == 0 { !piste.muet } else { audibles.contains(&piste.index) },
             eq: [piste.eq.grave, piste.eq.medium, piste.eq.aigu],
             reverb: piste.reverb,
         };
@@ -83,6 +84,8 @@ mod tests {
         demo.mixage[2].solo = true;
         let c = configuration(&demo);
         assert_eq!((c.pistes[1].audible, c.pistes[2].audible, c.pistes[0].audible), (false, true, true));
+        demo.mixage[0].muet = true;
+        assert!(!configuration(&demo).pistes[0].audible, "maître coupé");
     }
 
     #[test]

@@ -8,6 +8,7 @@ pub mod edition;
 pub mod gm;
 pub mod import_midi;
 pub mod lecture;
+pub mod mixage;
 pub mod modele;
 pub mod morceaux;
 pub mod pas;

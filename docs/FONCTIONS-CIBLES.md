@@ -119,7 +119,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Swing global et par canal | Swing, channel swing | Swing | 🟡 (global) | N3, E |
 | Muet, solo, volume, panoramique par canal | Mute, solo, knobs | Muet, solo, volume, panoramique | ✅ | N3 |
 | Témoins d'activité | Activity LED | Témoins | ✅ | N0 |
-| Sélection de la piste de mixage | Mixer track | Routage vers une piste (numéro dans le rack) | 🟡 | N3, N5 |
+| Sélection de la piste de mixage | Mixer track | Routage vers une piste (numéro dans le rack) | ✅ | N3, N5 |
 | Groupes et filtres de canaux | Filter groups | Groupes de canaux | ⬜ | E |
 | Couleurs, icônes, noms | Color, icon | Renommer, 16 couleurs ; icônes à venir | 🟡 | N3, E |
 | Cloner, déplacer, supprimer, remplacer | Clone, move, delete, replace | Cloner, monter, descendre, supprimer, remplacer le son | ✅ | N3 |
@@ -193,11 +193,11 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 
 | Fonction | Référence FL Studio | Chez song-audio | État | Phase |
 |---|---|---|---|---|
-| Pistes de mixage sans limite | Dynamic mixer tracks (jusqu'à 500, 2025) | Pistes illimitées | ✅ (moteur) ; ⬜ (interface) | ⟂, N5 |
-| Supprimer les pistes inutilisées | Trim unused tracks (2025.2) | Nettoyage des pistes | ⬜ | N5 |
-| Égaliseur 3 bandes par piste | Track EQ | Égaliseur | ✅ (moteur) | A, N5 |
-| Fader, panoramique, muet, solo | Fader, pan | Tranches | ✅ (moteur) | A, N5 |
-| Vumètres crête et RMS | Peak meters | Vumètres | ✅ (crêtes) | A, N5 |
+| Pistes de mixage sans limite | Dynamic mixer tracks (jusqu'à 500, 2025) | Pistes illimitées, tranches visibles seules dessinées | ✅ | ⟂, N5 |
+| Supprimer les pistes inutilisées | Trim unused tracks (2025.2) | Retirer les pistes inutilisées (renumérotées, routage gardé) | ✅ | N5 |
+| Égaliseur 3 bandes par piste | Track EQ | Égaliseur | ✅ | A, N5 |
+| Fader, panoramique, muet, solo | Fader, pan | Tranches (maître coupable) | ✅ | A, N5 |
+| Vumètres crête et RMS | Peak meters | Vumètres de crête stéréo ; RMS à venir | 🟡 | A, N5, H |
 | 10 emplacements d'effets par piste | 10 FX slots | Chaînes d'effets sans limite | ⬜ | H |
 | Envois de n'importe quelle piste vers n'importe quelle autre | Routing | Routage libre, sans boucle | 🟡 (envoi réverbération) | H |
 | Sidechain | Sidechain | Sidechain | ⬜ | H |
@@ -205,7 +205,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Compensation de latence | PDC | Compensation automatique | ⬜ | H |
 | Entrées et sorties audio par piste, armement | Track input/output, arm | Entrées/sorties, enregistrement | ⬜ | L |
 | États du mixage, préréglages de piste | Mixer states | Préréglages | ⬜ | H |
-| Liens canal → piste en masse | Link channels | Liaison automatique | ⬜ | N5 |
+| Liens canal → piste en masse | Link channels | Une piste par canal | ✅ | N5 |
 | Désactivation automatique des effets inactifs | Smart disable | Mise en sommeil (comme les canaux) | 🟡 (canaux) | H |
 | Rendu multicœur | Multithreaded | Rendu sur tous les cœurs | ✅ | ⟂ |
 | Limiteur du maître | Master limiter | Limiteur | ✅ | A |

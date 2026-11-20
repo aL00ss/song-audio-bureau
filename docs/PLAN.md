@@ -177,6 +177,23 @@ passent par egui_kittest.
   pads débordaient du panneau, hors d'atteinte. 7 tests `edition`, 4 tests `clavier`, 7 tests
   d'interface du piano roll et du jeu en direct (avec le vrai moteur : les voix sonnent et
   s'arrêtent).
+- [x] **N5 — Mixer** : calculs du mixer repris de la version web avec ses tests (décibels, loi
+  du fader, vumètre de -60 à +6 dB, solo et muet) ; une tranche par piste : nom (double clic pour
+  renommer, canaux reçus au survol), égaliseur 3 bandes et envoi de réverbération en boutons
+  rotatifs (glisser vertical, Maj pour la finesse, double clic pour la valeur par défaut,
+  flèches au clavier), panoramique, piste active, solo, fader (double clic : 0 dB), vumètre
+  stéréo vert, jaune, rouge avec une retombée de 20 dB par seconde quelle que soit la cadence
+  d'affichage, valeur en dB ; pistes coupées ou hors solo estompées. Pistes sans limite : seules
+  les tranches visibles sont dessinées (305 pistes : 0,8 ms par image). « + Piste », « Une piste
+  par canal », « Retirer les pistes inutilisées » (les autres sont renumérotées, les canaux
+  suivent leur piste). Les crêtes du moteur sont lues une seule fois par image (la lecture les
+  remet à zéro) et partagées avec les témoins du rack. Défaut trouvé et corrigé : couper le
+  maître n'avait aucun effet dans le moteur natif (il coupait le son dans la version web) ;
+  aussi, un argument vide en ligne de commande affichait « Fichier illisible ». 7 tests
+  `mixage`, 1 test du moteur (maître coupé), 4 tests d'interface du mixer avec le vrai moteur
+  (vumètres pendant la lecture, maître coupé, solo, boutons, fader, pistes). Une fois, pendant
+  la mise au point, le processus de test s'est arrêté brutalement (0xc0000409) alors que des
+  tests échouaient ; non reproduit depuis (5 passages de suite, et des échecs provoqués exprès).
 
 ## Phases
 

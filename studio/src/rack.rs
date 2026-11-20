@@ -37,7 +37,7 @@ impl Studio {
         let pattern = self.projet.pattern_actif().clone();
         let nb_pas = nombre_de_pas(&pattern) as usize;
         let pas_courant = (self.etat_transport() == EtatTransport::Lecture).then(|| (self.position() / TICS_PAR_PAS as f64) as usize % nb_pas.max(1));
-        let voix: Vec<u32> = self.moteur().map(|m| m.mesures().voix).unwrap_or_default();
+        let voix = self.mesures.voix.clone();
 
         // en-tête : longueur du pattern, swing
         ui.horizontal(|ui| {
