@@ -41,7 +41,21 @@ impl Studio {
 
         // en-tête : longueur du pattern, swing
         ui.horizontal(|ui| {
-            ui.label(RichText::new(&pattern.nom).strong());
+            // le pattern édité : on en change ici, ou on en crée un
+            let mut choisi = self.projet.pattern_actif.clone();
+            egui::ComboBox::from_id_salt("pattern actif").selected_text(RichText::new(&pattern.nom).strong()).show_ui(ui, |ui| {
+                for p in &self.projet.patterns {
+                    ui.selectable_value(&mut choisi, p.id.clone(), &p.nom);
+                }
+            });
+            if choisi != self.projet.pattern_actif {
+                self.modifier_si(|p| projet::playlist::choisir_pattern(p, &choisi));
+            }
+            if ui.small_button("+ Pattern").on_hover_text("Nouveau pattern").clicked() {
+                self.modifier(|p| {
+                    projet::playlist::nouveau_pattern(p);
+                });
+            }
             ui.label(RichText::new(format!("{} instruments", self.projet.canaux.len())).color(theme::DISCRET));
             ui.separator();
             let mut pas = nb_pas as i64;

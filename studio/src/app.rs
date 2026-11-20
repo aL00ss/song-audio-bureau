@@ -84,6 +84,7 @@ pub struct Studio {
     pub renommage_piste: Option<(usize, String)>,
     /// Hauteur des réglages d'une tranche (égaliseur, panoramique), mesurée à l'affichage.
     pub(crate) hauteur_reglages: f32,
+    pub arrangement: crate::arrangement::EtatArrangement,
 }
 
 impl Studio {
@@ -126,6 +127,7 @@ impl Studio {
             niveaux: Vec::new(),
             renommage_piste: None,
             hauteur_reglages: 70.0,
+            arrangement: Default::default(),
         }
     }
 

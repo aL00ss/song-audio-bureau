@@ -2,6 +2,7 @@
 //! programme.
 
 pub mod app;
+pub mod arrangement;
 pub mod coquille;
 pub mod instrument;
 pub mod jeu;

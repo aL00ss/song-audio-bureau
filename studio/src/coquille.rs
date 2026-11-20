@@ -1,12 +1,11 @@
 //! La coquille du studio : panneaux ancrables (egui_dock), disposition par défaut, raccourcis F5
 //! à F9 pour ouvrir ou fermer un panneau. La disposition est gardée d'une session à l'autre.
 
-use eframe::egui::{self, RichText, WidgetText};
+use eframe::egui::{self, WidgetText};
 use egui_dock::{DockState, NodeIndex, TabViewer};
 use serde::{Deserialize, Serialize};
 
 use crate::app::Studio;
-use crate::theme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Panneau {
@@ -40,14 +39,6 @@ impl Panneau {
             Panneau::Navigateur => Some(egui::Key::F8),
             Panneau::Mixage => Some(egui::Key::F9),
             Panneau::Instrument => None,
-        }
-    }
-
-    /// Phase du plan où le contenu complet du panneau arrive (None : déjà là).
-    fn a_venir(self) -> Option<&'static str> {
-        match self {
-            Panneau::Navigateur | Panneau::Rack | Panneau::PianoRoll | Panneau::Instrument | Panneau::Mixage => None,
-            Panneau::Arrangement => Some("N6"),
         }
     }
 }
@@ -119,13 +110,7 @@ impl TabViewer for Vue<'_> {
             Panneau::PianoRoll => self.studio.piano_roll(ui),
             Panneau::Instrument => self.studio.vue_instrument(ui),
             Panneau::Mixage => self.studio.mixeur(ui),
-            autre => {
-                ui.add_space(12.0);
-                ui.label(RichText::new(autre.titre()).heading());
-                if let Some(phase) = autre.a_venir() {
-                    ui.label(RichText::new(format!("Ce panneau est reconstruit en natif à la phase {phase} du plan.")).color(theme::DISCRET));
-                }
-            }
+            Panneau::Arrangement => self.studio.arrangement(ui),
         }
     }
 

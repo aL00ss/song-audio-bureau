@@ -12,6 +12,7 @@ pub mod mixage;
 pub mod modele;
 pub mod morceaux;
 pub mod pas;
+pub mod playlist;
 pub mod recherche;
 pub mod serialisation;
 pub mod synthes;

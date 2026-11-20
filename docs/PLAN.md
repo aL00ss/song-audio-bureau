@@ -194,6 +194,18 @@ passent par egui_kittest.
   (vumètres pendant la lecture, maître coupé, solo, boutons, fader, pistes). Une fois, pendant
   la mise au point, le processus de test s'est arrêté brutalement (0xc0000409) alors que des
   tests échouaient ; non reproduit depuis (5 passages de suite, et des échecs provoqués exprès).
+- [x] **N6 — Arrangement** : patterns et clips repris de la version web avec ses tests
+  (nouveau, dupliquer, renommer, choisir, supprimer un pattern et ses clips, jamais zéro
+  pattern ; poser, déplacer, retrouver, supprimer des clips ; le morceau enchaîne les clips).
+  Liste des patterns (choisir, double clic ou menu pour renommer, dupliquer, supprimer,
+  « + Nouveau ») ; pistes de l'arrangement : clic pour poser le pattern actif (aimanté à la
+  mesure, aussitôt déplaçable), glisser pour déplacer, clic droit glissé pour effacer, double
+  clic sur un clip pour choisir son pattern ; aperçu des notes dans les clips ; règle des
+  mesures (clic : jouer le morceau depuis cette mesure) ; tête de lecture ; fin du morceau
+  marquée ; molette (Maj : horizontal, Ctrl : zoom autour du pointeur), boutons de zoom. Pistes
+  sans limite : seul le visible est dessiné (5 000 clips sur 500 pistes : 0,9 ms par image).
+  Rack : liste du pattern édité et « + Pattern ». 4 tests `playlist`, 4 tests d'interface de
+  l'arrangement (dont la lecture depuis la mesure cliquée, avec le vrai moteur).
 
 ## Phases
 

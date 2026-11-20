@@ -33,10 +33,17 @@ fn canal<'a>(h: &'a Harness<'static, Studio>, nom: &'a str) -> egui_kittest::Nod
     h.get(by().role(Role::Button).label(nom))
 }
 
-/// Les listes de sons de batterie du rack (la grille du piano roll est aussi une liste).
+/// Valeurs des listes qui ne sont pas des sons : grille du piano roll, pattern du rack.
+fn autres_listes(h: &Harness<'static, Studio>) -> Vec<String> {
+    let mut v: Vec<String> = projet::edition::GRILLES.iter().map(|(n, _)| n.to_string()).collect();
+    v.extend(h.state().projet.patterns.iter().map(|p| p.nom.clone()));
+    v
+}
+
+/// Les listes de sons de batterie du rack.
 fn sons(h: &Harness<'static, Studio>) -> Vec<String> {
-    let grilles: Vec<&str> = projet::edition::GRILLES.iter().map(|(n, _)| *n).collect();
-    h.query_all(by().role(Role::ComboBox)).filter_map(|n| n.value()).filter(|v| !grilles.contains(&v.as_str())).collect()
+    let autres = autres_listes(h);
+    h.query_all(by().role(Role::ComboBox)).filter_map(|n| n.value()).filter(|v| !autres.contains(v)).collect()
 }
 
 fn pas(h: &Harness<'static, Studio>, canal: usize) -> Vec<u8> {
@@ -178,8 +185,8 @@ fn choisir_le_son_de_batterie_dans_la_liste() {
     let mut h = studio();
     h.get_by_label("Pas 1 Grosse caisse").click();
     h.step();
-    let grilles: Vec<&str> = projet::edition::GRILLES.iter().map(|(n, _)| *n).collect();
-    h.query_all(by().role(Role::ComboBox)).find(|n| n.value().is_some_and(|v| !grilles.contains(&v.as_str()))).expect("liste des sons").click();
+    let autres = autres_listes(&h);
+    h.query_all(by().role(Role::ComboBox)).find(|n| n.value().is_some_and(|v| !autres.contains(&v))).expect("liste des sons").click();
     h.run_steps(2);
     h.get_by_label("Cerclage").scroll_to_me();
     h.run_steps(2);

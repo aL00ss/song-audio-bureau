@@ -174,20 +174,20 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 
 | Fonction | Référence FL Studio | Chez song-audio | État | Phase |
 |---|---|---|---|---|
-| Pistes illimitées | Playlist tracks (500) | Pistes sans limite, virtualisées | 🌐 (quelques pistes) | N6, G |
-| Clips de pattern | Pattern clips | Clips de pattern | 🌐 | N6 |
+| Pistes illimitées | Playlist tracks (500) | Pistes sans limite, virtualisées | ✅ | N6, G |
+| Clips de pattern | Pattern clips | Clips de pattern (aperçu des notes) | ✅ | N6 |
 | Clips audio : forme d'onde, étirement, transposition, inversion, fondus | Audio clips (2025 : propriétés de clip) | Clips audio | ⬜ | G |
 | Clips d'automatisation : courbes, LFO, pas | Automation clips | Clips d'automatisation | ⬜ | G, K |
 | Plusieurs arrangements | Arrangements | Plusieurs arrangements | ⬜ | G |
-| Outils : peindre, couper, coller, muet, glisser le contenu | Paint, slice, mute, slip | Outils | 🌐 (poser, déplacer, supprimer) | N6, G |
+| Outils : peindre, couper, coller, muet, glisser le contenu | Paint, slice, mute, slip | Outils | 🟡 (poser, déplacer, supprimer) | N6, G |
 | Rendre unique, fusionner, scinder par canal | Make unique, merge, split by channel | Mêmes actions | ⬜ | G |
 | Marqueurs (temps, boucle, signature) | Markers | Marqueurs | ⬜ | G |
 | Regroupement, couleurs, icônes de pistes | Track groups, colors | Groupes de pistes | ⬜ | G |
 | Rendu en audio, gel | Consolidate / render | Rendu d'une sélection en audio | ⬜ | G, N |
 | Mode performance (lancement de clips) | Performance mode | Mode scène | ⬜ | O |
 | Prises multiples (comping) | Takes | Prises | ⬜ | L |
-| Panneau de choix (patterns, sons) | Picker panel | Panneau de choix | ⬜ | N6 |
-| Aimantation à la grille | Snap | Aimantation | 🌐 | N6 |
+| Panneau de choix (patterns, sons) | Picker panel | Liste des patterns de l'arrangement ; sons à venir | 🟡 | N6, G |
+| Aimantation à la grille | Snap | Aimantation à la mesure | 🟡 | N6, G |
 
 ## 9. Mixage
 
