@@ -46,8 +46,7 @@ impl Panneau {
     /// Phase du plan où le contenu complet du panneau arrive (None : déjà là).
     fn a_venir(self) -> Option<&'static str> {
         match self {
-            Panneau::Navigateur | Panneau::Rack => None,
-            Panneau::PianoRoll | Panneau::Instrument => Some("N4"),
+            Panneau::Navigateur | Panneau::Rack | Panneau::PianoRoll | Panneau::Instrument => None,
             Panneau::Mixage => Some("N5"),
             Panneau::Arrangement => Some("N6"),
         }
@@ -84,6 +83,16 @@ pub fn basculer(dock: &mut DockState<Panneau>, panneau: Panneau) {
     }
 }
 
+/// Ouvre le panneau s'il est fermé et l'amène au premier plan (sans jamais le fermer).
+pub fn montrer(dock: &mut DockState<Panneau>, panneau: Panneau) {
+    match dock.find_tab(&panneau) {
+        None => dock.push_to_focused_leaf(panneau),
+        Some(chemin) => {
+            let _ = dock.set_active_tab(chemin);
+        }
+    }
+}
+
 pub fn ouverts(dock: &DockState<Panneau>) -> Vec<Panneau> {
     dock.iter_all_tabs().map(|(_, p)| *p).collect()
 }
@@ -108,6 +117,8 @@ impl TabViewer for Vue<'_> {
         match tab {
             Panneau::Navigateur => self.studio.navigateur(ui),
             Panneau::Rack => self.studio.rack(ui),
+            Panneau::PianoRoll => self.studio.piano_roll(ui),
+            Panneau::Instrument => self.studio.vue_instrument(ui),
             autre => {
                 ui.add_space(12.0);
                 ui.label(RichText::new(autre.titre()).heading());
@@ -133,6 +144,17 @@ mod tests {
         let mut tous = ouverts(&dock);
         tous.sort_by_key(|p| Panneau::TOUS.iter().position(|q| q == p));
         assert_eq!(tous, Panneau::TOUS.to_vec());
+    }
+
+    #[test]
+    fn montrer_ouvre_et_ne_ferme_jamais() {
+        let mut dock = disposition_par_defaut();
+        montrer(&mut dock, Panneau::PianoRoll);
+        assert!(ouverts(&dock).contains(&Panneau::PianoRoll), "déjà ouvert : reste ouvert");
+        basculer(&mut dock, Panneau::PianoRoll);
+        assert!(!ouverts(&dock).contains(&Panneau::PianoRoll));
+        montrer(&mut dock, Panneau::PianoRoll);
+        assert!(ouverts(&dock).contains(&Panneau::PianoRoll));
     }
 
     #[test]

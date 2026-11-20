@@ -72,6 +72,10 @@ pub struct Studio {
     pub(crate) colonnes_pas: Vec<egui::Rangef>,
     /// Canal en cours de renommage, et le texte saisi.
     pub renommage: Option<(String, String)>,
+    /// Jeu en direct (notes tenues, clavier de l'ordinateur, enregistrement).
+    pub jeu: crate::jeu::Jeu,
+    pub piano_roll: crate::piano_roll::EtatPianoRoll,
+    pub instrument: crate::instrument::EtatInstrument,
 }
 
 impl Studio {
@@ -107,6 +111,9 @@ impl Studio {
             peinture: None,
             colonnes_pas: Vec::new(),
             renommage: None,
+            jeu: Default::default(),
+            piano_roll: Default::default(),
+            instrument: Default::default(),
         }
     }
 
@@ -197,6 +204,13 @@ impl Studio {
         }
     }
 
+    /// Ouvre un panneau et l'amène au premier plan.
+    pub fn montrer_panneau(&mut self, panneau: Panneau) {
+        if let Some(dock) = &mut self.dock {
+            coquille::montrer(dock, panneau);
+        }
+    }
+
     pub fn disposition_par_defaut(&mut self) {
         self.dock = Some(coquille::disposition_par_defaut());
     }
@@ -208,6 +222,10 @@ impl Studio {
 
     pub fn moteur(&self) -> Option<&Moteur> {
         self.moteur.as_ref()
+    }
+
+    pub(crate) fn moteur_mut(&mut self) -> Option<&mut Moteur> {
+        self.moteur.as_mut()
     }
 
     // ---------------------------------------------------------------- transport
@@ -285,6 +303,7 @@ impl Studio {
     }
 
     pub fn remplacer_projet(&mut self, projet: Projet, chemin: Option<PathBuf>) {
+        self.relacher_tout();
         self.arreter();
         self.canal_selectionne = projet.canaux.first().map(|c| c.id.clone());
         self.projet = projet;
@@ -433,6 +452,14 @@ impl Studio {
             }
             if ui.selectable_label(self.metronome, "Métro").on_hover_text("Métronome : un clic à chaque temps").clicked() {
                 self.basculer_metronome();
+            }
+            let enr = RichText::new("Enr.").color(if self.jeu.enregistrement { theme::ENREGISTREMENT } else { theme::TEXTE });
+            if ui
+                .selectable_label(self.jeu.enregistrement, enr)
+                .on_hover_text("Enregistrement : les notes jouées pendant la lecture s'inscrivent dans le pattern")
+                .clicked()
+            {
+                self.basculer_enregistrement();
             }
             ui.separator();
             for (mode, texte, aide) in [(ModeLecture::Pattern, "PAT", "Le pattern actif en boucle"), (ModeLecture::Morceau, "SONG", "Tout l'arrangement")] {
@@ -624,6 +651,9 @@ impl eframe::App for Studio {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.raccourcis(&ctx);
+        // ← → : octave du clavier, sauf quand le piano roll a le focus (il déplace ses notes)
+        let fleches_libres = !self.piano_roll.a_le_focus(&ctx);
+        self.lire_clavier(&ctx, fleches_libres);
         self.interroger_navigateur(Some(&ctx));
         // fichiers glissés sur la fenêtre : projet ou MIDI
         let deposes: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|c| c.is_absolute()).collect());

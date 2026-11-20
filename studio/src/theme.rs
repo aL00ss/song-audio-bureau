@@ -3,6 +3,7 @@
 
 use eframe::egui::{self, Color32, CornerRadius, Stroke, Visuals};
 
+pub const ENREGISTREMENT: Color32 = Color32::from_rgb(0xef, 0x44, 0x44);
 pub const FOND: Color32 = Color32::from_rgb(0x1b, 0x1e, 0x23);
 pub const PANNEAU: Color32 = Color32::from_rgb(0x26, 0x2b, 0x32);
 pub const PANNEAU_2: Color32 = Color32::from_rgb(0x30, 0x36, 0x3e);

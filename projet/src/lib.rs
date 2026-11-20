@@ -2,7 +2,9 @@
 //! Les fichiers ont le même format JSON que la version web.
 
 pub mod canaux;
+pub mod clavier;
 pub mod demo;
+pub mod edition;
 pub mod gm;
 pub mod import_midi;
 pub mod lecture;

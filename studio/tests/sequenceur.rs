@@ -27,6 +27,18 @@ fn studio() -> Harness<'static, Studio> {
     h
 }
 
+/// Le bouton du canal dans le rack (son nom apparaît aussi dans le piano roll et la vue
+/// d'instrument, comme simple texte).
+fn canal<'a>(h: &'a Harness<'static, Studio>, nom: &'a str) -> egui_kittest::Node<'a> {
+    h.get(by().role(Role::Button).label(nom))
+}
+
+/// Les listes de sons de batterie du rack (la grille du piano roll est aussi une liste).
+fn sons(h: &Harness<'static, Studio>) -> Vec<String> {
+    let grilles: Vec<&str> = projet::edition::GRILLES.iter().map(|(n, _)| *n).collect();
+    h.query_all(by().role(Role::ComboBox)).filter_map(|n| n.value()).filter(|v| !grilles.contains(&v.as_str())).collect()
+}
+
 fn pas(h: &Harness<'static, Studio>, canal: usize) -> Vec<u8> {
     let s = h.state();
     let c = &s.projet.canaux[canal];
@@ -124,8 +136,7 @@ fn la_grille_suit_la_longueur_et_le_son_de_batterie() {
     h.step();
     assert_eq!(h.state().projet.canaux[1].note_defaut, 40);
     assert_eq!(pas(&h, 1)[31], 100);
-    let sons: Vec<String> = h.query_all(by().role(Role::ComboBox)).filter_map(|n| n.value()).collect();
-    assert_eq!(sons, vec!["Grosse caisse", "Caisse claire électrique"], "le son de chaque canal s'affiche");
+    assert_eq!(sons(&h), vec!["Grosse caisse", "Caisse claire électrique"], "le son de chaque canal s'affiche");
 }
 
 #[test]
@@ -133,7 +144,7 @@ fn l_editeur_de_velocite_regle_le_pas_du_canal_choisi() {
     let mut h = studio();
     h.get_by_label("Pas 1 Clap").click();
     h.step();
-    h.get_by_label("Clap").click();
+    canal(&h, "Clap").click();
     h.step();
     assert_eq!(h.state().canal_selectionne.as_deref(), Some(h.state().projet.canaux[1].id.as_str()));
     // appui en haut de la barre : vélocité maximale ; au milieu : environ la moitié
@@ -167,7 +178,8 @@ fn choisir_le_son_de_batterie_dans_la_liste() {
     let mut h = studio();
     h.get_by_label("Pas 1 Grosse caisse").click();
     h.step();
-    h.query_all(by().role(Role::ComboBox)).next().expect("liste des sons").click();
+    let grilles: Vec<&str> = projet::edition::GRILLES.iter().map(|(n, _)| *n).collect();
+    h.query_all(by().role(Role::ComboBox)).find(|n| n.value().is_some_and(|v| !grilles.contains(&v.as_str()))).expect("liste des sons").click();
     h.run_steps(2);
     h.get_by_label("Cerclage").scroll_to_me();
     h.run_steps(2);
@@ -182,8 +194,8 @@ fn noms(h: &Harness<'static, Studio>) -> Vec<String> {
 }
 
 /// Ouvre le menu d'un canal (clic droit sur son nom) et choisit une entrée.
-fn menu(h: &mut Harness<'static, Studio>, canal: &str, entree: &str) {
-    h.get_by_label(canal).click_secondary();
+fn menu(h: &mut Harness<'static, Studio>, nom: &str, entree: &str) {
+    canal(h, nom).click_secondary();
     h.run_steps(2);
     h.get_by_label(entree).click();
     h.run_steps(2);
@@ -224,7 +236,8 @@ fn renommer_par_le_menu_ou_le_double_clic() {
     h.run_steps(2);
     assert_eq!(noms(&h), vec!["Grosse caisse", "Claquement"]);
     // Échap : on garde l'ancien nom
-    let c = survoler(&mut h, "Claquement");
+    let c = canal(&h, "Claquement").rect().center();
+    deplacer(&mut h, c);
     // double clic (une image dure 1/60 s : les deux clics sont à moins de 0,3 s)
     for appuye in [true, false, true, false] {
         bouton(&mut h, c, egui::PointerButton::Primary, appuye);
@@ -246,7 +259,7 @@ fn remplacer_le_son_et_la_couleur() {
         p.ajouter_canal(OptionsCanal { programme: 0, ..Default::default() });
     });
     h.run_steps(2);
-    h.get_by_label("Piano à queue").click_secondary();
+    canal(&h, "Piano à queue").click_secondary();
     h.run_steps(2);
     h.get_by_label_contains("Remplacer le son").hover();
     h.run_steps(2);
@@ -257,7 +270,7 @@ fn remplacer_le_son_et_la_couleur() {
     h.run_steps(2);
     let c = &h.state().projet.canaux[2];
     assert_eq!((c.programme, c.nom.as_str()), (35, "Basse fretless"));
-    h.get_by_label("Basse fretless").click_secondary();
+    canal(&h, "Basse fretless").click_secondary();
     h.run_steps(2);
     h.get_by_label_contains("Couleur").hover();
     h.run_steps(2);
@@ -265,7 +278,7 @@ fn remplacer_le_son_et_la_couleur() {
     h.run_steps(2);
     assert_eq!(h.state().projet.canaux[2].couleur, projet::canaux::PALETTE[9]);
     // une batterie n'a pas « Remplacer le son »
-    h.get_by_label("Clap").click_secondary();
+    canal(&h, "Clap").click_secondary();
     h.run_steps(2);
     assert!(h.query_by_label("Cloner").is_some(), "le menu est ouvert");
     assert!(h.query_by_label_contains("Remplacer le son").is_none());

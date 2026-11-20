@@ -64,8 +64,9 @@ fn ajouter_des_instruments_et_le_titre_signale_les_modifications() {
     assert_eq!(p.canaux.len(), avant + 2);
     assert_eq!(p.canaux.last().unwrap().nom, "Lead acide");
     assert_eq!(h.state().titre(), "• Démo — song-audio");
-    // le nouveau canal apparaît dans le rack
-    h.get_by_label("Lead acide");
+    // le nouveau canal apparaît dans le rack (sa grille de pas), et il est choisi
+    h.get_by_label("Pas 1 Lead acide");
+    assert_eq!(h.state().canal_selectionne.as_deref(), Some(h.state().projet.canaux.last().unwrap().id.as_str()));
 }
 
 #[test]

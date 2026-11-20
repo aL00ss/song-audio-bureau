@@ -79,12 +79,12 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Signature rythmique et ses changements | Time signature markers | Marqueurs de signature | 🟡 (signature fixe) | G |
 | Métronome, décompte | Metronome, countdown | Métronome, décompte | ✅ (décompte : moteur) | B |
 | Attente d'une note pour enregistrer | Wait for input | Attendre la première note | ⬜ | L |
-| Enregistrement des notes, de l'audio, de l'automatisation | Recording filter | Filtres d'enregistrement | 🌐 (notes) | L |
-| Enregistrement en boucle, superposition, remplacement | Loop record, overdub, blend | Boucle, superposition, remplacement | 🟡 (superposition, web) | L |
+| Enregistrement des notes, de l'audio, de l'automatisation | Recording filter | Filtres d'enregistrement | 🟡 (notes) | N4, L |
+| Enregistrement en boucle, superposition, remplacement | Loop record, overdub, blend | Boucle, superposition, remplacement | 🟡 (superposition) | L |
 | Punch in/out | Punch | Punch | ⬜ | L |
 | Quantification à l'enregistrement | Quantize on record | Quantification à l'enregistrement | ⬜ | L |
 | Mode pas à pas (saisie note par note) | Step editing | Saisie pas à pas | ⬜ | F |
-| Clavier de l'ordinateur comme piano | Typing keyboard to piano | Clavier de l'ordinateur | 🌐 | N4 |
+| Clavier de l'ordinateur comme piano | Typing keyboard to piano | Clavier de l'ordinateur (AZERTY ou QWERTY reconnu à la frappe) | ✅ | N4 |
 | Afficheur mesures / temps / secondes | Song position | Afficheurs | ✅ | N0 |
 | Sélection de temps en boucle | Time selection loop | Boucle de sélection | ⬜ | B, G |
 | Journal audio (rien n'est perdu) | Audio Logger (2026) | Enregistrement continu de la sortie | ⬜ | L |
@@ -125,7 +125,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Cloner, déplacer, supprimer, remplacer | Clone, move, delete, replace | Cloner, monter, descendre, supprimer, remplacer le son | ✅ | N3 |
 | Remplir tous les N pas, décaler, inverser, aléatoire | Fill each N steps, rotate, randomize | Mêmes outils | ⬜ | E |
 | Couches (un déclenchement joue plusieurs canaux) | Layer channel | Couches | ⬜ | E |
-| Envoyer au piano roll | Send to piano roll | Ouvrir dans le piano roll | ⬜ | N4 |
+| Envoyer au piano roll | Send to piano roll | Ouvrir dans le piano roll (menu du canal, clic sur l'aperçu) | ✅ | N4 |
 | Canaux d'automatisation et de clips audio | Automation / audio clip channels | Canaux spéciaux | ⬜ | G, K |
 
 ## 6. Échantillonneur de canal (réglages d'un son)
@@ -146,10 +146,10 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 
 | Fonction | Référence FL Studio | Chez song-audio | État | Phase |
 |---|---|---|---|---|
-| Dessin, peinture, effacement, sélection, zoom | Draw, paint, delete, select, zoom | Outils d'édition (dessin GPU) | 🌐 | N4 |
+| Dessin, peinture, effacement, sélection, zoom | Draw, paint, delete, select, zoom | Outils d'édition (dessin GPU) | ✅ | N4 |
 | Couper (trancher), coller, muet, lecture d'une zone | Slice, glue, mute, playback | Mêmes outils | ⬜ | F |
-| Lasso, sélection par hauteur, tout sélectionner | Select tools | Sélections | 🌐 | N4 |
-| Quantification, quantification rapide, force | Quantize | Quantification avec force et swing | 🟡 (simple, web) | F |
+| Lasso, sélection par hauteur, tout sélectionner | Select tools | Lasso, tout sélectionner ; sélection par hauteur à venir | 🟡 | N4, F |
+| Quantification, quantification rapide, force | Quantize | Quantification avec force et swing | 🟡 (simple) | F |
 | Notes fantômes des autres canaux | Ghost notes | Notes fantômes | ⬜ | F |
 | Gammes : surlignage et aimantation | Scale highlighting, snap to scale | Gammes | ⬜ | F |
 | Tampons d'accords | Stamp | Tampons d'accords | ⬜ | F |
@@ -164,10 +164,10 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Propriétés par note : vélocité, relâchement, panoramique, hauteur fine, modulations X/Y | Note properties | Propriétés par note | 🟡 (vélocité) | F |
 | Notes glissées, portamento | Slide notes, porta | Glissandos | ⬜ | F |
 | Couleurs de notes, canal MIDI par note | Note colors | Couleurs de notes | ⬜ | F |
-| Couloirs d'événements (vélocité, contrôleurs, pitch bend) | Event editor lanes | Couloirs d'édition | 🟡 (vélocité, web) | F, K |
+| Couloirs d'événements (vélocité, contrôleurs, pitch bend) | Event editor lanes | Couloirs d'édition | 🟡 (vélocité) | F, K |
 | Marqueurs de temps | Time markers | Marqueurs | ⬜ | F |
 | Scripts d'édition | Piano roll scripts (Python) | Scripts (Lua ou Rhai) | ⬜ | F |
-| Clavier vertical jouable | Keyboard | Clavier jouable | 🌐 | N4 |
+| Clavier vertical jouable | Keyboard | Clavier jouable | ✅ | N4 |
 | Import et export MIDI d'un pattern | Import/export MIDI | Import/export par pattern | 🌐 (projet) | N8 |
 
 ## 8. Arrangement (playlist)
@@ -219,7 +219,7 @@ Chaque instrument de FL Studio, sa fonction, et son équivalent prévu (nom à n
 | Channel Sampler / Audio Clip | Lecture d'échantillons | Échantillonneur | ⬜ | D |
 | DirectWave | Échantillonneur multi-couches | Échantillonneur multi-couches (SFZ par sfizz) | ⬜ | D |
 | SoundFont Player (2026) | Banques SF2 | Lecteur SoundFont | ✅ | A |
-| FPC | Pads de batterie, couches par pad (2026) | Pads de batterie | 🌐 (pads) | J |
+| FPC | Pads de batterie, couches par pad (2026) | Pads de batterie | 🟡 (pads) | N4, J |
 | Fruity Slicer, Slicex, Fruity Slicer 2 (2025.2) | Découpe de boucles | Découpeur de boucles | ⬜ | L |
 | FL Keys | Piano | Piano échantillonné (Salamander) | 🌐 | D |
 | FLEX (refait en 2026) | Lecteur de préréglages | Lecteur de préréglages par style | ⬜ | J |

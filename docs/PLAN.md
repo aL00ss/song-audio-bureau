@@ -153,6 +153,30 @@ passent par egui_kittest.
   (projet ou MIDI). 9 tests `pas`, 5 tests `canaux`, 10 tests d'interface du séquenceur
   (peinture et effacement simulés au pointeur, double clic, menus, suppression pendant la
   lecture avec le vrai moteur).
+- [x] **N4 — Piano roll et vue d'instrument** : édition des notes reprise de la version web avec
+  ses tests (aimantation, note sous le pointeur, déplacement d'un groupe sans sortir du piano,
+  redimensionnement, quantification, vélocité, lasso) ; piano roll dessiné par la carte
+  graphique, seules les notes visibles sont dessinées (20 000 notes : 1,2 ms par image) ; clic
+  pour poser une note (aimantée, de la durée de la dernière touchée, aussitôt déplaçable),
+  glisser pour déplacer, bord droit pour redimensionner, clic droit glissé pour effacer,
+  Ctrl + glisser pour le lasso (Maj pour ajouter), Suppr, Ctrl+A, Échap, flèches (Maj : octave),
+  molette (Maj : horizontal, Ctrl : zoom autour du pointeur), grille (mesure à aucune),
+  quantifier, couloir de vélocité, clavier vertical qui fait entendre les notes, tête de
+  lecture, zone après la fin du pattern assombrie ; les lignes de pas s'effacent quand elles
+  sont trop serrées. Vue d'instrument : clavier de 88 touches (vélocité selon la hauteur de
+  frappe, glissando au glisser, touches allumées pendant la lecture, lettres du clavier de
+  l'ordinateur sur les touches) ; pads de batterie disposés comme un kit (un pad joue la ligne
+  de son son si elle existe), qui passent à la ligne quand le panneau est étroit. Jeu en direct
+  envoyé tout de suite au moteur ; clavier de l'ordinateur par position physique des touches
+  (deux octaves, flèches gauche et droite pour l'octave, AZERTY ou QWERTY reconnu à la première
+  frappe, rien pendant une saisie de texte, tout relâché quand la fenêtre perd le focus) ;
+  enregistrement (bouton « Enr. ») : les notes jouées pendant la lecture s'inscrivent dans le
+  pattern actif à leur place dans la boucle (en mode morceau, ramenées à la longueur du pattern,
+  là où la version web pouvait les écrire au-delà). Rack : « Ouvrir dans le piano roll » dans
+  le menu du canal, et clic sur l'aperçu des notes. Défaut trouvé par les tests et corrigé : les
+  pads débordaient du panneau, hors d'atteinte. 7 tests `edition`, 4 tests `clavier`, 7 tests
+  d'interface du piano roll et du jeu en direct (avec le vrai moteur : les voix sonnent et
+  s'arrêtent).
 
 ## Phases
 

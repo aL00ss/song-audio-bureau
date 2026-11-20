@@ -3,7 +3,10 @@
 
 pub mod app;
 pub mod coquille;
+pub mod instrument;
+pub mod jeu;
 pub mod navigateur;
+pub mod piano_roll;
 pub mod pont;
 pub mod rack;
 pub mod theme;

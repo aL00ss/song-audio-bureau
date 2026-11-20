@@ -149,7 +149,11 @@ impl Studio {
                         if en_pas {
                             self.grille(ui, canal, &velocites_des_pas(&pattern, &canal.id, canal.note_defaut), pas_courant, pointeur);
                         } else {
-                            apercu(ui, &notes, pattern.longueur, couleur(&canal.couleur), (nb_pas as f32 * PAS.x).min(900.0));
+                            // un clic sur l'aperçu ouvre les notes dans le piano roll
+                            if apercu(ui, &notes, pattern.longueur, couleur(&canal.couleur), (nb_pas as f32 * PAS.x).min(900.0)).clicked() {
+                                self.canal_selectionne = Some(canal.id.clone());
+                                self.montrer_panneau(crate::coquille::Panneau::PianoRoll);
+                            }
                         }
                     });
                 }
@@ -192,6 +196,11 @@ impl Studio {
     /// Menu d'un canal (clic droit sur son nom).
     fn menu_canal(&mut self, ui: &mut egui::Ui, canal: &projet::Canal, rang: usize) {
         let id = canal.id.clone();
+        if ui.button("Ouvrir dans le piano roll").clicked() {
+            self.canal_selectionne = Some(id.clone());
+            self.montrer_panneau(crate::coquille::Panneau::PianoRoll);
+            ui.close();
+        }
         if ui.button("Renommer…").clicked() {
             self.renommage = Some((id.clone(), canal.nom.clone()));
             ui.close();
@@ -358,11 +367,12 @@ impl Studio {
 }
 
 /// Aperçu des notes d'un canal sur toute la longueur du pattern (le piano roll les édite).
-fn apercu(ui: &mut egui::Ui, notes: &[NoteMusicale], longueur: u32, teinte: Color32, largeur: f32) {
-    let (rect, reponse) = ui.allocate_exact_size(Vec2::new(largeur.max(40.0), PAS.y), Sense::hover());
-    reponse.widget_info(|| WidgetInfo::labeled(WidgetType::Other, true, "Aperçu des notes"));
+fn apercu(ui: &mut egui::Ui, notes: &[NoteMusicale], longueur: u32, teinte: Color32, largeur: f32) -> egui::Response {
+    let (rect, reponse) = ui.allocate_exact_size(Vec2::new(largeur.max(40.0), PAS.y), Sense::click());
+    reponse.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Aperçu des notes"));
+    let reponse = reponse.on_hover_text("Ouvrir dans le piano roll");
     ui.painter().rect_filled(rect, 2.0, theme::FOND);
-    let (Some(basse), Some(haute)) = (notes.iter().map(|n| n.hauteur).min(), notes.iter().map(|n| n.hauteur).max()) else { return };
+    let (Some(basse), Some(haute)) = (notes.iter().map(|n| n.hauteur).min(), notes.iter().map(|n| n.hauteur).max()) else { return reponse };
     let etendue = (haute - basse) as f32 + 1.0;
     let echelle = rect.width() / longueur.max(1) as f32;
     for n in notes.iter().filter(|n| n.tic < longueur) {
@@ -372,4 +382,5 @@ fn apercu(ui: &mut egui::Ui, notes: &[NoteMusicale], longueur: u32, teinte: Colo
         let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(largeur_note, (rect.height() / etendue).max(1.5)));
         ui.painter().rect_filled(r, 0.0, teinte.gamma_multiply(0.4 + n.velocite as f32 / 127.0 * 0.6));
     }
+    reponse
 }
