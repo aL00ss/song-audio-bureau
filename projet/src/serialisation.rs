@@ -81,7 +81,7 @@ fn lire_note(v: &Value, chemin: &str) -> R<NoteMusicale> {
         },
         fin: match o.get("fin") {
             None => 0,
-            Some(v) => entier_signe(v, &format!("{chemin}.fin"), -100.0, 100.0)? as i16,
+            Some(v) => entier_signe(v, &format!("{chemin}.fin"), -1200.0, 1200.0)? as i16,
         },
         relachement: match o.get("relachement") {
             None => crate::modele::RELACHEMENT_DEFAUT,

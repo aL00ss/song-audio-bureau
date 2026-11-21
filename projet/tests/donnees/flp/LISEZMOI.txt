@@ -1,0 +1,4 @@
+« PyFLP - FL 20.8.4.flp » : projet d'essai de PyFLP (https://github.com/demberto/PyFLP),
+par demberto, sous licence GPL-3.0 (comme song-audio). Il sert à vérifier la lecture des
+fichiers .flp (tempo, canaux, couches, patterns, arrangement, mixer, infos du projet) contre
+les valeurs que vérifient les tests de PyFLP.

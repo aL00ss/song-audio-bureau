@@ -6,6 +6,8 @@ pub mod clavier;
 pub mod demo;
 pub mod edition;
 pub mod export_midi;
+pub mod flp;
+pub mod import_flp;
 pub mod gm;
 pub mod historique;
 pub mod import_midi;

@@ -165,6 +165,19 @@ pub struct InstrumentEchantillons {
 }
 
 impl InstrumentEchantillons {
+    /// Un instrument d'un fichier : SFZ, ou un échantillon seul (WAV, FLAC) joué sur tout le
+    /// clavier, juste au do central.
+    pub fn depuis_fichier(chemin: &Path) -> Result<(InstrumentEchantillons, Vec<String>), String> {
+        let extension = chemin.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if extension == "sfz" {
+            return Self::depuis_sfz(chemin);
+        }
+        let echantillon = Arc::new(charger_echantillon(chemin)?);
+        let region = Region { echantillon: chemin.to_path_buf(), note_racine: 60, ..Default::default() };
+        let nom = chemin.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        Ok((InstrumentEchantillons { nom, zones: vec![Zone { region, echantillon, gain: 1.0 }], commutation: None, commutateur_defaut: None }, Vec::new()))
+    }
+
     /// Charge un fichier SFZ et tous ses échantillons (un échantillon partagé par plusieurs
     /// régions n'est lu qu'une fois). Les échantillons manquants sont signalés, pas fatals.
     pub fn depuis_sfz(chemin: &Path) -> Result<(InstrumentEchantillons, Vec<String>), String> {
@@ -724,6 +737,21 @@ mod tests {
         assert_eq!(e.voix(), 0);
         e.note_on(60, 100);
         assert!((frequence(&rendre(&mut e, 0.05)) - 1000.0).abs() < 40.0);
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn un_echantillon_seul_est_un_instrument() {
+        let d = dossier("seul");
+        ecrire_wav(&d.join("kick.wav"), 220.0, 22050, None);
+        let (i, _) = InstrumentEchantillons::depuis_fichier(&d.join("kick.wav")).unwrap();
+        assert_eq!((i.zones.len(), i.nom.as_str()), (1, "kick"));
+        let mut e = Echantillonneur::new(44100);
+        e.changer_instrument(Some(Arc::new(i)));
+        e.note_on(72, 100);
+        // joué deux fois plus vite, l'échantillon d'une demi-seconde dure 0,25 s
+        let f = frequence(&rendre(&mut e, 0.2));
+        assert!((f - 440.0).abs() < 10.0, "une octave au-dessus du do central : {f} Hz");
         std::fs::remove_dir_all(&d).ok();
     }
 

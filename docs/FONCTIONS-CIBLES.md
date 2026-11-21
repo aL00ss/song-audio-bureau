@@ -67,6 +67,7 @@ Phases : N0 à N9 (reconstruction native), A à O (fonctions), ⟂ (exigence « 
 | Sauvegarde du projet en ligne | FL Cloud backup (2026) | Dossier synchronisé au choix (local, Git, nuage personnel) | ⛔ → dossier synchronisé | O |
 | Import de projets d'autres logiciels | (partiel) | Import MIDI (un instrument par canal), puis formats ouverts (DAWproject) | 🟡 (MIDI ✅) | N2, N |
 | Format ouvert compatible web | — | Même JSON que la version web | ✅ | N0 |
+| Ouvrir les projets FL Studio | Projet .flp | Import des .flp : canaux, couches, patterns, notes, arrangement, mixer, infos ; greffons remplacés au plus proche | 🟡 (sans automatisation ni greffons) | N8, K, M |
 
 ## 3. Transport, temps, enregistrement
 

@@ -338,6 +338,29 @@ La reconstruction native est terminée. Suite : les phases D à O ci-dessous, ve
   2 tests d'interface (glisser vers le rack et sur un canal ; couche jouée par le vrai moteur).
 
 Phase E terminée, sauf les modulations X/Y par pas (avec l'automatisation, phase K).
+- [x] **Import des projets FL Studio (.flp)** (demande du 21 novembre 2026) : lecture du format
+  (connu grâce à la rétro-ingénierie de PyFLP, GPL-3.0 ; notre propre code) : en-tête, suite
+  d'événements, textes ASCII ou UTF-16 selon la version ; regroupement en canaux (type, nom,
+  greffon, échantillon, volume, panoramique, piste du mixer, enfants des couches, note racine),
+  patterns (nom, longueur, notes : position, longueur, hauteur, vélocité, panoramique, hauteur
+  fine, relâchement, glissé), arrangements (clips de pattern et de canal, pistes rangées à
+  l'envers), pistes du mixer (nom, volume, panoramique), tempo, signature, titre, artistes,
+  genre, commentaires. Conversion : couches avec leurs enfants ; échantillons retrouvés (données
+  d'usine de FL Studio installé, sinon dossier du projet) joués par l'échantillonneur (un
+  échantillon seul est désormais un instrument, juste au do central ; notes transposées selon
+  la note racine) ; greffons et échantillons introuvables remplacés par le son General MIDI le
+  plus proche d'après les noms (batteries d'un seul son : toutes les notes sur ce son ; FPC :
+  kit) en gardant le nom du canal ; clips audio rejoués par l'échantillonneur de leur canal à
+  leur place ; pistes du mixer une pour une, routage gardé ; temps convertis depuis la
+  résolution du fichier ; arrangement courant ; pattern courant. Laissés de côté et listés dans
+  le « Rapport d'import » : clips d'automatisation, sortie MIDI, notes glissées (jouées
+  normalement), autres arrangements. Hauteur fine des notes élargie à ±1200 cents, comme FL
+  Studio. Ouverture par Fichier > Ouvrir, la liste des fichiers et le glisser-déposer.
+  Vérifié sur le projet d'essai de PyFLP (FL Studio 20.8.4) contre les valeurs que vérifient
+  ses tests (tempo 69,42, 19 canaux, couche à 17 enfants, volumes et panoramiques extrêmes,
+  noms et réglages des pistes, 5 patterns, clips toutes les 384 tics…). Les fenêtres (rapport,
+  crédits, infos) s'ouvrent au centre (le rapport cachait la barre de transport). Tests :
+  2 de lecture, 4 de conversion, 1 de l'échantillon seul, 1 d'interface (ouvert puis joué).
 
 ## Phases
 

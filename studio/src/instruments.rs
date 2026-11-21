@@ -100,7 +100,7 @@ impl Studio {
             let envoi = self.instruments.envoi.clone();
             let contexte = ctx.cloned();
             std::thread::spawn(move || {
-                let resultat = InstrumentEchantillons::depuis_sfz(Path::new(&chemin)).map(|(i, a)| (Arc::new(i), a));
+                let resultat = InstrumentEchantillons::depuis_fichier(Path::new(&chemin)).map(|(i, a)| (Arc::new(i), a));
                 let _ = envoi.send((chemin, resultat));
                 if let Some(c) = contexte {
                     c.request_repaint();

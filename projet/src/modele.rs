@@ -27,7 +27,7 @@ pub struct NoteMusicale {
     /// Panoramique propre à la note, -100 (gauche) à 100 (droite).
     #[serde(default, skip_serializing_if = "est_zero_i8")]
     pub pan: i8,
-    /// Réglage fin de la hauteur, en cents (-100 à 100).
+    /// Réglage fin de la hauteur, en cents (-1200 à 1200, comme FL Studio).
     #[serde(default, skip_serializing_if = "est_zero_i16")]
     pub fin: i16,
     /// Vélocité de relâchement (1 à 127, 64 par défaut).

@@ -175,8 +175,8 @@ impl Studio {
             Action::Fichier(chemin) => self.ouvrir_fichier(&chemin),
             Action::Morceau(m) => self.charger_morceau(&m),
             Action::ChoisirEtOuvrir => {
-                if let Some(c) = rfd::FileDialog::new().set_title("Ouvrir un projet").add_filter("Projet song-audio", &["json"]).pick_file() {
-                    self.ouvrir(&c);
+                if let Some(c) = rfd::FileDialog::new().set_title("Ouvrir un projet").add_filter("Projet song-audio ou FL Studio", &["json", "flp"]).pick_file() {
+                    self.ouvrir_fichier(&c);
                 }
             }
             Action::Fermer => self.fichiers.fermeture_permise = true,
@@ -332,7 +332,7 @@ impl Studio {
         }
         let mut ouverte = true;
         let (mut nom, mut infos) = (self.projet.nom.clone(), self.projet.infos.clone());
-        egui::Window::new("Infos du projet").open(&mut ouverte).resizable(true).default_width(420.0).show(ctx, |ui| {
+        egui::Window::new("Infos du projet").pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.content_rect().center()).open(&mut ouverte).resizable(true).default_width(420.0).show(ctx, |ui| {
             egui::Grid::new("fiche").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                 ui.label("Titre");
                 ui.add(egui::TextEdit::singleline(&mut nom).desired_width(300.0));
@@ -471,6 +471,10 @@ impl Studio {
             self.exporter_wav();
         }
         ui.separator();
+        if ui.add_enabled(!self.rapport_import.is_empty(), egui::Button::new("Rapport d'import…")).clicked() {
+            ui.close();
+            self.rapport_ouvert = true;
+        }
         if ui.button("Infos du projet…").clicked() {
             ui.close();
             self.fichiers.fiche_ouverte = true;

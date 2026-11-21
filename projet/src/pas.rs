@@ -196,7 +196,7 @@ impl ParametrePas {
         match self {
             ParametrePas::Velocite => n.velocite as f32 / 127.0,
             ParametrePas::Panoramique => (n.pan as f32 + 100.0) / 200.0,
-            ParametrePas::HauteurFine => (n.fin as f32 + 100.0) / 200.0,
+            ParametrePas::HauteurFine => (n.fin as f32 + 1200.0) / 2400.0,
             ParametrePas::Relachement => n.relachement as f32 / 127.0,
             ParametrePas::Decalage => n.decalage as f32 / (TICS_PAR_PAS - 1) as f32,
         }
@@ -208,7 +208,7 @@ impl ParametrePas {
         match self {
             ParametrePas::Velocite => n.velocite = (v * 127.0).round().max(1.0) as u8,
             ParametrePas::Panoramique => n.pan = (v * 200.0 - 100.0).round() as i8,
-            ParametrePas::HauteurFine => n.fin = (v * 200.0 - 100.0).round() as i16,
+            ParametrePas::HauteurFine => n.fin = ((v * 2400.0 - 1200.0) / 10.0).round() as i16 * 10,
             ParametrePas::Relachement => n.relachement = (v * 127.0).round().max(1.0) as u8,
             ParametrePas::Decalage => n.decalage = (v * (TICS_PAR_PAS - 1) as f32).round() as u8,
         }
@@ -448,16 +448,16 @@ mod tests {
         definir_parametre_pas(&mut p, &id, 2, ParametrePas::Relachement, 0.5);
         definir_parametre_pas(&mut p, &id, 5, ParametrePas::Panoramique, 1.0); // pas inactif : rien
         let n = notes_des_pas(p.pattern_actif(), &id, 36)[2].unwrap();
-        assert_eq!((n.pan, n.fin, n.decalage, n.relachement), (-100, 50, 23, 64));
+        assert_eq!((n.pan, n.fin, n.decalage, n.relachement), (-100, 600, 23, 64));
         assert!(notes_des_pas(p.pattern_actif(), &id, 36)[5].is_none());
         assert_eq!(ParametrePas::Panoramique.texte(&n), "100 % gauche");
-        assert_eq!(ParametrePas::HauteurFine.texte(&n), "+50 cents");
+        assert_eq!(ParametrePas::HauteurFine.texte(&n), "+600 cents");
         assert!((ParametrePas::HauteurFine.lire(&n) - 0.75).abs() < 1e-6);
         // toujours en mode pas (le décalage ne déplace pas la note dans la grille)
         assert!(est_en_mode_pas(&p.pattern_actif().notes[&id], 36));
         // la lecture : départ décalé de 23 tics, panoramique et cents transmis
         let jouees = notes_a_jouer(&p, ModeLecture::Pattern).0;
-        assert_eq!((jouees[0].debut, jouees[0].pan, jouees[0].cents), (48 + 23, -100, 50));
+        assert_eq!((jouees[0].debut, jouees[0].pan, jouees[0].cents), (48 + 23, -100, 600));
         // le fichier les garde, et n'écrit rien pour une note ordinaire
         let json = crate::serialisation::serialiser(&p);
         assert_eq!(crate::serialisation::deserialiser(&json).unwrap(), p);

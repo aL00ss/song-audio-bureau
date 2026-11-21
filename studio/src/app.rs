@@ -105,6 +105,9 @@ pub struct Studio {
     pub nouveau_groupe: String,
     /// Paramètre montré par l'éditeur des pas du rack.
     pub parametre_pas: projet::pas::ParametrePas,
+    /// Remarques du dernier import d'un projet FL Studio, et leur fenêtre.
+    pub rapport_import: Vec<String>,
+    pub rapport_ouvert: bool,
 }
 
 impl Studio {
@@ -170,6 +173,8 @@ impl Studio {
             filtre_groupe: Default::default(),
             nouveau_groupe: String::new(),
             parametre_pas: projet::pas::ParametrePas::Velocite,
+            rapport_import: Vec::new(),
+            rapport_ouvert: false,
         }
     }
 
@@ -208,11 +213,39 @@ impl Studio {
         }
     }
 
-    /// Ouvre un fichier du disque : un projet (.json) ou un fichier MIDI (importé sans jouer).
+    /// Importe un projet FL Studio : le projet le remplace, le rapport dit ce qui a été remplacé.
+    pub fn importer_flp(&mut self, chemin: &Path) {
+        let nom = chemin.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let resultat = std::fs::read(chemin)
+            .map_err(|e| e.to_string())
+            .and_then(|o| projet::import_flp::depuis_flp(&o, &nom, chemin.parent(), &projet::import_flp::dossiers_fl_studio()));
+        match resultat {
+            Ok(import) => {
+                let (canaux, patterns, clips) = (import.projet.canaux.len(), import.projet.patterns.len(), import.projet.playlist.len());
+                self.remplacer_projet(import.projet, None);
+                self.modifie = true; // pas encore enregistré comme projet song-audio
+                self.mode = if clips > 0 { ModeLecture::Morceau } else { ModeLecture::Pattern };
+                self.message = Some(format!(
+                    "Projet FL Studio « {nom} » importé : {canaux} canaux, {patterns} patterns, {clips} clips{}.",
+                    if import.rapport.is_empty() { String::new() } else { format!(" ; {} remarques (Fichier > Rapport d'import)", import.rapport.len()) }
+                ));
+                self.rapport_import = import.rapport;
+                self.rapport_ouvert = !self.rapport_import.is_empty();
+            }
+            Err(e) => self.message = Some(format!("Projet FL Studio illisible : {nom} ({e})")),
+        }
+    }
+
+    /// Ouvre un fichier du disque : un projet (.json), un projet FL Studio (.flp) ou un fichier
+    /// MIDI (importé sans jouer).
     pub fn ouvrir_fichier(&mut self, chemin: &Path) {
         let nom = chemin.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         if nom.to_lowercase().ends_with(".json") {
             self.ouvrir(chemin);
+            return;
+        }
+        if nom.to_lowercase().ends_with(".flp") {
+            self.importer_flp(chemin);
             return;
         }
         let titre = nom.trim_end_matches(".midi").trim_end_matches(".MIDI").trim_end_matches(".mid").trim_end_matches(".MID").to_string();
@@ -583,8 +616,8 @@ impl Studio {
     fn fichiers(&mut self, ui: &mut egui::Ui) {
         ui.label(RichText::new("FICHIERS").small().strong().color(theme::DISCRET));
         ui.horizontal_wrapped(|ui| {
-            if ui.small_button("Ouvrir un fichier…").on_hover_text("Un projet (.json) ou un fichier MIDI (.mid)").clicked() {
-                if let Some(c) = rfd::FileDialog::new().add_filter("Projet ou MIDI", &["json", "mid", "midi"]).pick_file() {
+            if ui.small_button("Ouvrir un fichier…").on_hover_text("Un projet (.json), un projet FL Studio (.flp) ou un fichier MIDI (.mid)").clicked() {
+                if let Some(c) = rfd::FileDialog::new().add_filter("Projet, projet FL Studio ou MIDI", &["json", "flp", "mid", "midi"]).pick_file() {
                     self.demander(crate::fichiers::Action::Fichier(c));
                 }
             }
@@ -783,6 +816,7 @@ impl eframe::App for Studio {
         });
         self.fiche_du_projet(&ctx);
         self.credits(&ctx);
+        self.fenetre_rapport(&ctx);
         self.relever_export();
         // fermer la fenêtre avec des modifications : on demande d'abord
         if ctx.input(|i| i.viewport().close_requested()) && self.modifie && !self.fichiers.fermeture_permise {
@@ -821,7 +855,7 @@ impl Studio {
         let morceaux = self.navigateur.morceaux.clone();
         let chargees = self.banques_chargees.clone();
         let racine_banques = self.dossier_des_banques();
-        egui::Window::new("Crédits des sons").open(&mut ouverte).default_width(520.0).show(ctx, |ui| {
+        egui::Window::new("Crédits des sons").pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.content_rect().center()).open(&mut ouverte).default_width(520.0).show(ctx, |ui| {
             egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
                 ui.label(RichText::new("Banques de sons").strong());
                 let banque = |ui: &mut egui::Ui, nom: &str, auteur: &str, licence: &str, note: &str| {
@@ -871,5 +905,25 @@ impl Studio {
             });
         });
         self.credits_ouverts = ouverte;
+    }
+}
+
+impl Studio {
+    /// Ce que l'import d'un projet FL Studio a dû remplacer ou laisser de côté.
+    pub fn fenetre_rapport(&mut self, ctx: &egui::Context) {
+        if !self.rapport_ouvert {
+            return;
+        }
+        let mut ouverte = true;
+        let rapport = self.rapport_import.clone();
+        egui::Window::new("Rapport d'import").pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.content_rect().center()).open(&mut ouverte).default_width(560.0).show(ctx, |ui| {
+            ui.label(RichText::new("Ce que song-audio a remplacé au plus proche ou laissé de côté :").color(theme::DISCRET));
+            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                for ligne in &rapport {
+                    ui.label(format!("• {ligne}"));
+                }
+            });
+        });
+        self.rapport_ouvert = ouverte;
     }
 }
