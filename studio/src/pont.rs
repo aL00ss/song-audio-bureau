@@ -51,7 +51,7 @@ pub fn session(projet: &Projet, mode: ModeLecture) -> Session {
         temps_par_mesure: projet.signature.numerateur,
         notes: notes
             .into_iter()
-            .map(|n| NoteSession { debut: n.debut, fin: n.fin, canal: n.canal, hauteur: n.hauteur, velocite: n.velocite, pan: n.pan, cents: n.cents })
+            .map(|n| NoteSession { debut: n.debut, fin: n.fin, canal: n.canal, hauteur: n.hauteur, velocite: n.velocite, pan: n.pan, cents: n.cents, debut_ms: n.debut_ms, vitesse: n.vitesse })
             .collect(),
         boucler: true,
     }

@@ -18,6 +18,9 @@ pub struct NoteSession {
     /// Panoramique propre à la note (-100 à 100) et réglage fin (cents).
     pub pan: i8,
     pub cents: i16,
+    /// Départ dans l'échantillon (ms) et vitesse (millièmes, 1000 : normale).
+    pub debut_ms: u32,
+    pub vitesse: u16,
 }
 
 /// Ce que le transport joue : tempo, longueur de la boucle, notes, métronome.
@@ -66,9 +69,11 @@ struct Bascule {
     hauteur: u8,
     /// 0 : extinction.
     velocite: u8,
-    /// Panoramique et réglage fin propres à la note (allumage seulement).
+    /// Panoramique, réglage fin, départ et vitesse propres à la note (allumage seulement).
     pan: i8,
     cents: i16,
+    debut_ms: u32,
+    vitesse: u16,
 }
 
 /// Session prête à jouer : ses bascules sont triées hors du fil audio (allocation comprise).
@@ -88,8 +93,8 @@ impl SessionPreparee {
                 continue;
             }
             let fin = n.fin.min(session.longueur).max(n.debut + 1);
-            bascules.push(Bascule { tic: n.debut, canal: n.canal, hauteur: n.hauteur, velocite: n.velocite.max(1), pan: n.pan, cents: n.cents });
-            bascules.push(Bascule { tic: fin, canal: n.canal, hauteur: n.hauteur, velocite: 0, pan: 0, cents: 0 });
+            bascules.push(Bascule { tic: n.debut, canal: n.canal, hauteur: n.hauteur, velocite: n.velocite.max(1), pan: n.pan, cents: n.cents, debut_ms: n.debut_ms, vitesse: n.vitesse });
+            bascules.push(Bascule { tic: fin, canal: n.canal, hauteur: n.hauteur, velocite: 0, pan: 0, cents: 0, debut_ms: 0, vitesse: 1000 });
         }
         bascules.sort_by(|a, b| a.tic.cmp(&b.tic).then((a.velocite > 0).cmp(&(b.velocite > 0))));
         let canaux = session.notes.iter().map(|n| n.canal as usize + 1).max().unwrap_or(0);
@@ -278,8 +283,8 @@ impl Transport {
                 let Some(notes) = self.allumees.get_mut(x.canal as usize) else { continue };
                 let allumee = &mut notes[x.hauteur as usize];
                 if x.velocite > 0 {
-                    noyau.programmer(Evenement { echantillon, canal: x.canal, message: if x.pan != 0 || x.cents != 0 {
-                        Message::NoteOnExpressive { hauteur: x.hauteur, velocite: x.velocite, pan: x.pan, cents: x.cents }
+                    noyau.programmer(Evenement { echantillon, canal: x.canal, message: if x.pan != 0 || x.cents != 0 || x.debut_ms != 0 || x.vitesse != 1000 {
+                        Message::NoteOnExpressive { hauteur: x.hauteur, velocite: x.velocite, pan: x.pan, cents: x.cents, debut_ms: x.debut_ms, vitesse: x.vitesse }
                     } else {
                         Message::NoteOn { hauteur: x.hauteur, velocite: x.velocite }
                     } });
@@ -355,7 +360,7 @@ mod tests {
         let mut noyau = Noyau::new(&banque(), FE).unwrap();
         regler(&mut noyau, &configuration(0, false)); // piano
         let mut t = Transport::new();
-        t.definir_session(session(vec![NoteSession { debut: 192, fin: 240, canal: 0, hauteur: 72, velocite: 110, pan: 0, cents: 0 }]), &mut noyau);
+        t.definir_session(session(vec![NoteSession { debut: 192, fin: 240, canal: 0, hauteur: 72, velocite: 110, pan: 0, cents: 0, debut_ms: 0, vitesse: 1000 }]), &mut noyau);
         t.agir(ActionTransport::Jouer { decompte: false }, &mut noyau);
         let g = jouer(&mut t, &mut noyau, 3.2);
         // la note est au 3e temps : 1 s, puis 3 s au tour suivant
@@ -375,7 +380,7 @@ mod tests {
         let mut noyau = Noyau::new(&banque(), FE).unwrap();
         regler(&mut noyau, &configuration(48, false)); // cordes tenues
         let mut t = Transport::new();
-        t.definir_session(session(vec![NoteSession { debut: 0, fin: 384, canal: 0, hauteur: 60, velocite: 100, pan: 0, cents: 0 }]), &mut noyau);
+        t.definir_session(session(vec![NoteSession { debut: 0, fin: 384, canal: 0, hauteur: 60, velocite: 100, pan: 0, cents: 0, debut_ms: 0, vitesse: 1000 }]), &mut noyau);
         t.agir(ActionTransport::Jouer { decompte: false }, &mut noyau);
         jouer(&mut t, &mut noyau, 0.5);
         t.agir(ActionTransport::Pause, &mut noyau);
@@ -395,8 +400,8 @@ mod tests {
         let mut c = configuration(48, false);
         c.canaux.push(c.canaux[0]);
         regler(&mut noyau, &c);
-        let a = NoteSession { debut: 0, fin: 384, canal: 0, hauteur: 60, velocite: 100, pan: 0, cents: 0 };
-        let b = NoteSession { debut: 0, fin: 384, canal: 1, hauteur: 67, velocite: 100, pan: 0, cents: 0 };
+        let a = NoteSession { debut: 0, fin: 384, canal: 0, hauteur: 60, velocite: 100, pan: 0, cents: 0, debut_ms: 0, vitesse: 1000 };
+        let b = NoteSession { debut: 0, fin: 384, canal: 1, hauteur: 67, velocite: 100, pan: 0, cents: 0, debut_ms: 0, vitesse: 1000 };
         let mut t = Transport::new();
         t.definir_session(session(vec![a, b]), &mut noyau);
         t.agir(ActionTransport::Jouer { decompte: false }, &mut noyau);

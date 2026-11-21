@@ -361,6 +361,18 @@ Phase E terminée, sauf les modulations X/Y par pas (avec l'automatisation, phas
   noms et réglages des pistes, 5 patterns, clips toutes les 384 tics…). Les fenêtres (rapport,
   crédits, infos) s'ouvrent au centre (le rapport cachait la barre de transport). Tests :
   2 de lecture, 4 de conversion, 1 de l'échantillon seul, 1 d'interface (ouvert puis joué).
+- [x] **Clips audio fidèles (import .flp)** : vérifié sur un vrai projet de l'utilisateur (FL Studio
+  24.2, 21 canaux, 344 éléments d'arrangement, boucles à 120 BPM dans un projet à 128 BPM). Un clip
+  audio peut commencer au milieu de son son et l'étirer au tempo : chaque note porte désormais un
+  départ dans l'échantillon (ms) et une vitesse (sans changer la hauteur), écrits dans le fichier
+  seulement s'ils servent. L'échantillonneur démarre la voix à ce départ et étire le son par
+  grains (deux grains décalés d'un demi-grain, fenêtres en sinus carré) : la hauteur ne bouge pas,
+  la durée suit. À l'import, la vitesse vient de la partie du son jouée rapportée à la durée du
+  clip ; la vitesse habituelle du canal (médiane de ses clips) l'emporte sur un clip à peine plus
+  long ; sous 2 % d'écart, vitesse normale (un son court n'est pas étiré). Un canal sans
+  échantillon indiqué est signalé dans le rapport. Le projet de l'utilisateur se rend en entier
+  (198 s, structure intacte) en 3 s. Tests : départ et étirement (hauteur gardée, suite qui arrive
+  deux fois plus tôt), vitesse d'un clip.
 
 ## Phases
 

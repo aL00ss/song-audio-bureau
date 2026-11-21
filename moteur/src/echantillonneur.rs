@@ -7,10 +7,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::sfz::{Boucle, Declenchement, Region, lire_sfz};
-use crate::source::Source;
+use crate::source::{Expression, Source};
 
 /// Voix jouables en même temps par un canal échantillonneur.
 pub const VOIX_MAX: usize = 64;
+/// Longueur d'un grain de l'étirement (sans changer la hauteur), en échantillons de sortie.
+const GRAIN: u32 = 2048;
 
 /// Les valeurs d'un échantillon : gardées en 16 bits quand le fichier l'est (deux fois moins de
 /// mémoire, sans rien perdre), en flottants sinon.
@@ -245,6 +247,12 @@ struct Voix {
     age: u64,
     /// Facteur de relâchement par échantillon.
     facteur_relachement: f32,
+    /// Étirement sans changer la hauteur : vitesse (1 : lecture ordinaire), position de la
+    /// source dans l'échantillon, échantillons de sortie écoulés, départ des deux grains.
+    vitesse: f32,
+    source: f64,
+    ecoules: u32,
+    grains: [f64; 2],
 }
 
 impl Default for Voix {
@@ -262,6 +270,10 @@ impl Default for Voix {
             relachee: false,
             age: 0,
             facteur_relachement: 0.0,
+            vitesse: 1.0,
+            source: 0.0,
+            ecoules: 0,
+            grains: [0.0; 2],
         }
     }
 }
@@ -322,7 +334,8 @@ impl Echantillonneur {
         self.instrument.as_ref()
     }
 
-    fn demarrer(&mut self, zone_index: usize, hauteur: u8, velocite: u8, attenuation_db: f32, pan_note: f32, demi_tons_note: f32) {
+    fn demarrer(&mut self, zone_index: usize, hauteur: u8, velocite: u8, attenuation_db: f32, expression: Expression) {
+        let (pan_note, demi_tons_note) = (expression.pan, expression.demi_tons);
         let Some(instrument) = &self.instrument else { return };
         let zone = &instrument.zones[zone_index];
         let r = &zone.region;
@@ -349,11 +362,12 @@ impl Echantillonneur {
         // une voix libre, sinon la plus ancienne
         let index = self.voix.iter().position(|v| !v.active).unwrap_or_else(|| (0..VOIX_MAX).min_by_key(|&i| self.voix[i].age).unwrap_or(0));
         self.compteur += 1;
+        let depart = r.decalage as f64 + expression.debut_ms as f64 * zone.echantillon.frequence as f64 / 1000.0;
         self.voix[index] = Voix {
             active: true,
             zone: zone_index,
             hauteur,
-            position: r.decalage as f64,
+            position: depart,
             pas,
             gain: (gain * p.cos(), gain * p.sin()),
             phase: if r.retard > 0.0 { Phase::Retard } else { Phase::Attaque },
@@ -362,6 +376,10 @@ impl Echantillonneur {
             relachee: false,
             age: self.compteur,
             facteur_relachement: (-1.0 / (r.relachement.max(0.001) * self.frequence / 6.9)).exp(),
+            vitesse: if (expression.vitesse - 1.0).abs() > 0.001 { expression.vitesse.clamp(0.1, 10.0) } else { 1.0 },
+            source: depart,
+            ecoules: 0,
+            grains: [depart, depart],
         };
     }
 
@@ -420,10 +438,10 @@ impl Source for Echantillonneur {
     }
 
     fn note_on(&mut self, hauteur: u8, velocite: u8) {
-        self.note_on_expressive(hauteur, velocite, 0.0, 0.0);
+        self.note_on_expressive(hauteur, velocite, Expression::default());
     }
 
-    fn note_on_expressive(&mut self, hauteur: u8, velocite: u8, pan: f32, demi_tons: f32) {
+    fn note_on_expressive(&mut self, hauteur: u8, velocite: u8, expression: Expression) {
         if velocite == 0 {
             return self.note_off(hauteur);
         }
@@ -437,7 +455,7 @@ impl Source for Echantillonneur {
         let (zones, n) = self.zones_pour(hauteur, velocite, Declenchement::Attaque);
         self.tenues[hauteur as usize & 127] = Some((self.horloge, velocite));
         for &z in &zones[..n] {
-            self.demarrer(z, hauteur, velocite, 0.0, pan, demi_tons);
+            self.demarrer(z, hauteur, velocite, 0.0, expression);
         }
     }
 
@@ -457,7 +475,7 @@ impl Source for Echantillonneur {
             let (zones, n) = self.zones_pour(hauteur, velocite, Declenchement::Relachement);
             for &z in &zones[..n] {
                 let amortissement = instrument.zones[z].region.amortissement_relachement * tenue;
-                self.demarrer(z, hauteur, velocite, amortissement, 0.0, 0.0);
+                self.demarrer(z, hauteur, velocite, amortissement, Expression::default());
             }
         }
     }
@@ -537,11 +555,35 @@ impl Source for Echantillonneur {
                         }
                     }
                 }
-                let (a, b) = e.lire(v.position);
+                let (a, b) = if v.vitesse == 1.0 {
+                    e.lire(v.position)
+                } else {
+                    // étirement : deux grains à la hauteur d'origine, décalés d'un demi-grain,
+                    // fenêtres en sinus carré (leur somme vaut 1) ; chaque grain repart de la
+                    // position de la source, qui avance à la vitesse voulue
+                    let mut somme = (0.0f32, 0.0f32);
+                    for k in 0..2 {
+                        let t = (v.ecoules + k as u32 * GRAIN / 2) % GRAIN;
+                        if t == 0 {
+                            v.grains[k] = v.source;
+                        }
+                        let phase = t as f32 / GRAIN as f32;
+                        let fenetre = (std::f32::consts::PI * phase).sin().powi(2);
+                        let (x, y) = e.lire(v.grains[k] + t as f64 * v.pas);
+                        somme = (somme.0 + x * fenetre, somme.1 + y * fenetre);
+                    }
+                    v.ecoules = v.ecoules.wrapping_add(1);
+                    somme
+                };
                 let niveau = v.niveau * volume;
                 *g += a * v.gain.0 * niveau;
                 *d += b * v.gain.1 * niveau;
-                v.position += v.pas;
+                if v.vitesse == 1.0 {
+                    v.position += v.pas;
+                } else {
+                    v.source += v.pas * v.vitesse as f64;
+                    v.position = v.source;
+                }
                 if let Some((debut, fin_boucle)) = boucle_active(v.relachee) {
                     if fin_boucle > debut && v.position >= fin_boucle {
                         v.position = debut + (v.position - fin_boucle) % (fin_boucle - debut);
@@ -752,6 +794,37 @@ mod tests {
         // joué deux fois plus vite, l'échantillon d'une demi-seconde dure 0,25 s
         let f = frequence(&rendre(&mut e, 0.2));
         assert!((f - 440.0).abs() < 10.0, "une octave au-dessus du do central : {f} Hz");
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn depart_dans_l_echantillon_et_etirement_sans_changer_la_hauteur() {
+        let d = dossier("etirement");
+        // une seconde à 440 Hz, puis une seconde à 880 Hz
+        let spec = hound::WavSpec { channels: 1, sample_rate: 44100, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+        let mut w = hound::WavWriter::create(d.join("deux.wav"), spec).unwrap();
+        for i in 0..88200 {
+            let f = if i < 44100 { 440.0 } else { 880.0 };
+            w.write_sample(((i as f32 / 44100.0 * f * std::f32::consts::TAU).sin() * 16000.0) as i16).unwrap();
+        }
+        w.finalize().unwrap();
+        let (i, _) = InstrumentEchantillons::depuis_fichier(&d.join("deux.wav")).unwrap();
+        let i = Arc::new(i);
+        let mut e = Echantillonneur::new(44100);
+        e.changer_instrument(Some(i.clone()));
+        // départ à 1 s : on entend directement la deuxième partie
+        e.note_on_expressive(60, 100, Expression { debut_ms: 1000, ..Default::default() });
+        let f = frequence(&rendre(&mut e, 0.3));
+        assert!((f - 880.0).abs() < 15.0, "départ à 1 s : {f} Hz");
+        e.tout_couper();
+        // deux fois plus vite sans changer la hauteur : 440 Hz, et la partie à 880 Hz arrive vers 0,5 s
+        e.note_on_expressive(60, 100, Expression { vitesse: 2.0, ..Default::default() });
+        let s = rendre(&mut e, 1.2);
+        let debut = frequence(&s[2000..18000]);
+        let fin = frequence(&s[26000..40000]);
+        assert!((debut - 440.0).abs() < 25.0, "hauteur gardée : {debut} Hz");
+        assert!((fin - 880.0).abs() < 40.0, "la suite arrive deux fois plus tôt : {fin} Hz");
+        assert!(efficace(&s[46500..]) < 0.01, "l'échantillon de 2 s est fini en 1 s");
         std::fs::remove_dir_all(&d).ok();
     }
 

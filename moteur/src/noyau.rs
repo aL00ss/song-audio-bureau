@@ -17,7 +17,7 @@ use rustysynth::SoundFont;
 
 use crate::ateliers::Ateliers;
 use crate::effets::{Biquad, Limiteur, Reverb, TypeFiltre, gain_du_fader, panoramique};
-use crate::source::{Source, TYPES_SOURCES, TypeSource, sources_integrees};
+use crate::source::{Expression, Source, TYPES_SOURCES, TypeSource, sources_integrees};
 
 /// Plus long bloc rendu d'un coup ; au-delà, le rendu est découpé.
 pub const BLOC_MAX: usize = 1024;
@@ -33,7 +33,7 @@ const SILENCE: f32 = 1e-6;
 pub enum Message {
     NoteOn { hauteur: u8, velocite: u8 },
     /// Note avec panoramique (-100 à 100) et réglage fin (cents) qui lui sont propres.
-    NoteOnExpressive { hauteur: u8, velocite: u8, pan: i8, cents: i16 },
+    NoteOnExpressive { hauteur: u8, velocite: u8, pan: i8, cents: i16, debut_ms: u32, vitesse: u16 },
     NoteOff { hauteur: u8 },
 }
 
@@ -440,9 +440,10 @@ impl Noyau {
                 canal.reveiller();
                 canal.source().note_on(hauteur, velocite);
             }
-            Message::NoteOnExpressive { hauteur, velocite, pan, cents } => {
+            Message::NoteOnExpressive { hauteur, velocite, pan, cents, debut_ms, vitesse } => {
                 canal.reveiller();
-                canal.source().note_on_expressive(hauteur, velocite, pan as f32 / 100.0, cents as f32 / 100.0);
+                let expression = Expression { pan: pan as f32 / 100.0, demi_tons: cents as f32 / 100.0, debut_ms, vitesse: vitesse as f32 / 1000.0 };
+                canal.source().note_on_expressive(hauteur, velocite, expression);
             }
             Message::NoteOff { hauteur } => canal.source().note_off(hauteur),
         }

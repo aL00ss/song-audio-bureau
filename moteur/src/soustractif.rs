@@ -5,7 +5,7 @@
 
 use std::f32::consts::PI;
 
-use crate::source::Source;
+use crate::source::{Expression, Source};
 
 const VOIX: usize = 16;
 /// Échantillons entre deux mises à jour des coefficients du filtre.
@@ -309,10 +309,11 @@ impl Source for Soustractif {
     }
 
     fn note_on(&mut self, hauteur: u8, velocite: u8) {
-        self.note_on_expressive(hauteur, velocite, 0.0, 0.0);
+        self.note_on_expressive(hauteur, velocite, Expression::default());
     }
 
-    fn note_on_expressive(&mut self, hauteur: u8, velocite: u8, pan: f32, demi_tons: f32) {
+    fn note_on_expressive(&mut self, hauteur: u8, velocite: u8, expression: Expression) {
+        let (pan, demi_tons) = (expression.pan, expression.demi_tons);
         self.compteur += 1;
         let frequence = hauteur_en_hz(hauteur as f32 + demi_tons);
         // glissement : la nouvelle note part de la hauteur de la dernière voix jouée
@@ -461,7 +462,7 @@ mod tests {
     fn panoramique_et_hauteur_propres_a_la_note() {
         let mut s = Soustractif::new(FE);
         s.regler(5, false, 0.8, 0.0); // sinus pur
-        s.note_on_expressive(69, 100, -1.0, 1.0);
+        s.note_on_expressive(69, 100, Expression { pan: -1.0, demi_tons: 1.0, ..Default::default() });
         let (mut g, mut d) = (vec![0.0f32; 22050], vec![0.0f32; 22050]);
         s.rendre(&mut g, &mut d);
         let efficace = |x: &[f32]| (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt();

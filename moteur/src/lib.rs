@@ -17,7 +17,7 @@ pub mod transport;
 pub use noyau::{Canal, Configuration, Evenement, Mesures, Message, Noyau, Piste, ReglageCanal, ReglagePiste, Stockage};
 pub use rustysynth::SoundFont;
 pub use sortie::Moteur;
-pub use source::{Source, TypeSource};
+pub use source::{Expression, Source, TypeSource};
 pub use sortie::EtatLecture;
 pub use transport::{ActionTransport, EtatTransport, NoteSession, Session, SessionPreparee, Transport};
 

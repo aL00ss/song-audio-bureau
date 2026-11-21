@@ -87,6 +87,14 @@ fn lire_note(v: &Value, chemin: &str) -> R<NoteMusicale> {
             None => crate::modele::RELACHEMENT_DEFAUT,
             Some(v) => entier(v, &format!("{chemin}.relachement"), 1.0, 127.0)? as u8,
         },
+        debut_echantillon: match o.get("debutEchantillon") {
+            None => 0,
+            Some(v) => entier(v, &format!("{chemin}.debutEchantillon"), 0.0, u32::MAX as f64)? as u32,
+        },
+        vitesse: match o.get("vitesse") {
+            None => crate::modele::VITESSE_NORMALE,
+            Some(v) => entier(v, &format!("{chemin}.vitesse"), 100.0, 10000.0)? as u16,
+        },
         decalage: match o.get("decalage") {
             None => 0,
             Some(v) => entier(v, &format!("{chemin}.decalage"), 0.0, (crate::temps::TICS_PAR_PAS - 1) as f64)? as u8,

@@ -218,7 +218,11 @@ pub fn depuis_flp(octets: &[u8], nom_fichier: &str, dossier_projet: Option<&Path
         rapport.push(format!("« {canal} » : le greffon {greffon} est remplacé par « {remplacant} » (General MIDI)."));
     }
     for (canal, echantillon, remplacant) in &manquants {
-        rapport.push(format!("« {canal} » : échantillon introuvable ({echantillon}), remplacé par « {remplacant} »."));
+        if echantillon.starts_with("aucun") {
+            rapport.push(format!("« {canal} » : {echantillon}, remplacé par « {remplacant} »."));
+        } else {
+            rapport.push(format!("« {canal} » : échantillon introuvable ({echantillon}), remplacé par « {remplacant} »."));
+        }
     }
 
     // ---- mixer : les pistes de FL Studio, une pour une (la 0 est le maître)
@@ -291,7 +295,22 @@ pub fn depuis_flp(octets: &[u8], nom_fichier: &str, dossier_projet: Option<&Path
     }
 
     // ---- arrangement : clips de pattern ; clips audio rejoués par l'échantillonneur de leur canal
-    let mut clips_audio_patterns: HashMap<(u16, u32), String> = HashMap::new();
+    let mut clips_audio_patterns: HashMap<(u16, u32, u32, u16), String> = HashMap::new();
+    let ms_par_tic = 60_000.0 / (p.tempo * TICS_PAR_NOIRE as f64);
+    // vitesse habituelle de chaque canal joué en clips audio : la médiane de ses clips
+    let mut vitesses_canaux: HashMap<u16, f64> = HashMap::new();
+    if let Some(a) = arrangement {
+        let mut par_canal: HashMap<u16, Vec<f64>> = HashMap::new();
+        for c in &a.clips {
+            if let (ElementFlp::Canal(iid), Some(r)) = (c.element, rapport_du_clip(c, ms_par_tic, ppq)) {
+                par_canal.entry(iid).or_default().push(r);
+            }
+        }
+        for (iid, mut v) in par_canal {
+            v.sort_by(|a, b| a.total_cmp(b));
+            vitesses_canaux.insert(iid, v[v.len() / 2]);
+        }
+    }
     if let Some(a) = arrangement {
         for c in &a.clips {
             let debut = tics(c.position, ppq) as i64;
@@ -304,13 +323,27 @@ pub fn depuis_flp(octets: &[u8], nom_fichier: &str, dossier_projet: Option<&Path
                 ElementFlp::Canal(iid) => {
                     let Some(Destin::Canal { id: canal, transposition, .. }) = destins.get(&iid) else { continue };
                     let longueur = tics(c.longueur, ppq).max(1);
-                    // un pattern par canal et par longueur de clip : une note qui joue le son
-                    let cle = (iid, longueur);
+                    // le clip joue une partie du son (départ et fin en ms dans l'échantillon) ;
+                    // si cette partie dure plus ou moins que le clip, FL Studio l'étire au tempo
+                    let (debut_ms, vitesse) = match rapport_du_clip(c, ms_par_tic, ppq) {
+                        Some(rapport) => {
+                            // la vitesse habituelle du canal l'emporte sur un clip à peine plus long
+                            let habituelle = vitesses_canaux.get(&iid).copied().unwrap_or(rapport);
+                            let r = if ((rapport - habituelle) / habituelle).abs() < 0.02 { habituelle } else { rapport };
+                            // un écart de moins de 2 % : vitesse normale (un son court n'est pas étiré)
+                            let vitesse = if (r - 1.0).abs() < 0.02 { 1000 } else { (r * 1000.0).round().clamp(100.0, 10000.0) as u16 };
+                            (c.debut_decale.round() as u32, vitesse)
+                        }
+                        None => (0, 1000),
+                    };
+                    // un pattern par canal, longueur, départ et vitesse : une note qui joue le son
+                    let cle = (iid, longueur, debut_ms, vitesse);
                     let pattern = clips_audio_patterns.entry(cle).or_insert_with(|| {
                         let nom = format!("Clip audio : {}", p.canal(canal).map(|x| x.nom.clone()).unwrap_or_default());
                         let mut motif = creer_pattern(&nom, longueur.div_ceil(TICS_PAR_PAS) * TICS_PAR_PAS);
                         let hauteur = (60 + *transposition).clamp(0, 127) as u8;
-                        motif.notes.insert(canal.clone(), vec![NoteMusicale { tic: 0, duree: longueur, hauteur, velocite: 100, ..Default::default() }]);
+                        let note = NoteMusicale { tic: 0, duree: longueur, hauteur, velocite: 100, debut_echantillon: debut_ms, vitesse, ..Default::default() };
+                        motif.notes.insert(canal.clone(), vec![note]);
                         let id = motif.id.clone();
                         p.patterns.push(motif);
                         id
@@ -330,6 +363,14 @@ pub fn depuis_flp(octets: &[u8], nom_fichier: &str, dossier_projet: Option<&Path
     let courant = flp.pattern_courant.and_then(|i| ids_patterns.get(&i)).cloned();
     p.pattern_actif = courant.filter(|id| p.patterns.iter().any(|x| &x.id == id)).unwrap_or_else(|| p.patterns[0].id.clone());
     Ok(ImportFlp { projet: p, rapport })
+}
+
+/// Vitesse de lecture qu'implique un clip audio : la partie du son qu'il joue (départ et fin, en
+/// millisecondes) rapportée à sa durée dans le projet ; None si le clip ne la donne pas.
+fn rapport_du_clip(c: &crate::flp::ClipFlp, ms_par_tic: f64, ppq: u16) -> Option<f64> {
+    let valide = c.debut_decale.is_finite() && c.fin_decalee.is_finite() && c.fin_decalee > c.debut_decale && c.debut_decale >= 0.0;
+    let duree_clip = tics(c.longueur, ppq).max(1) as f64 * ms_par_tic;
+    valide.then(|| (c.fin_decalee - c.debut_decale) as f64 / duree_clip)
 }
 
 fn s(n: usize) -> &'static str {
@@ -403,7 +444,9 @@ fn convertir_canal(
     }
     let programme = programme_d_apres_nom(&noms);
     let id = p.ajouter_canal(options(OptionsCanal { programme, ..Default::default() }));
-    if !greffon.is_empty() || c.genre == TypeCanalFlp::Instrument {
+    if greffon.is_empty() && c.genre == TypeCanalFlp::Echantillonneur {
+        manquants.push((nom.clone(), "aucun échantillon indiqué dans le fichier".into(), crate::gm::nom_instrument(programme).to_string()));
+    } else if !greffon.is_empty() || c.genre == TypeCanalFlp::Instrument {
         let source = if greffon.is_empty() { "de ce canal".to_string() } else { greffon.clone() };
         greffons.push((nom.clone(), source, crate::gm::nom_instrument(programme).to_string()));
     }
@@ -424,7 +467,7 @@ fn convertir_note(n: &NoteFlp, ppq: u16, hauteur_fixe: Option<u8>, transposition
         pan: (((n.pan as i32 - 64) * 100) / 64).clamp(-100, 100) as i8,
         fin: ((n.hauteur_fine as i32 - 120) * 10).clamp(-1200, 1200) as i16,
         relachement: echelle(n.relachement),
-        decalage: 0,
+        ..Default::default()
     }
 }
 
@@ -506,6 +549,23 @@ mod tests {
         assert!(kick.instrument.as_deref().unwrap().ends_with("22in Kick.wav"));
         assert!(!i.rapport.iter().any(|r| r.contains("introuvable")));
         std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn vitesse_d_un_clip_audio() {
+        use crate::flp::{ClipFlp, ElementFlp};
+        // 128 BPM : une noire = 96 tics = 468,75 ms
+        let ms_par_tic = 60_000.0 / (128.0 * 96.0);
+        let clip = |longueur, debut, fin| ClipFlp { position: 0, element: ElementFlp::Canal(0), longueur, piste: 0, debut_decale: debut, fin_decalee: fin };
+        // une boucle à 120 BPM de 32 temps (16 s) dans 32 temps à 128 BPM : 16/15 plus vite
+        let r = rapport_du_clip(&clip(3072, 0.0, 16000.0), ms_par_tic, 96).unwrap();
+        assert!((r - 16.0 / 15.0).abs() < 1e-9);
+        // un son joué tel quel : un temps de son dans un temps de clip
+        let r = rapport_du_clip(&clip(96, 1000.0, 1468.75), ms_par_tic, 96).unwrap();
+        assert!((r - 1.0).abs() < 1e-9);
+        // offsets absents (clip de pattern) ou invalides
+        assert!(rapport_du_clip(&clip(96, f32::NAN, f32::NAN), ms_par_tic, 96).is_none());
+        assert!(rapport_du_clip(&clip(96, -1.0, -1.0), ms_par_tic, 96).is_none());
     }
 
     #[test]

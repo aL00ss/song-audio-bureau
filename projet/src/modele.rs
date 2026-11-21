@@ -36,13 +36,21 @@ pub struct NoteMusicale {
     /// Décalage du départ, en tics (0 à un pas), sans changer la place de la note dans la grille.
     #[serde(default, skip_serializing_if = "est_zero_u8")]
     pub decalage: u8,
+    /// Échantillonneur : départ dans l'échantillon, en millisecondes (clip audio commencé au milieu).
+    #[serde(default, skip_serializing_if = "est_zero_u32", rename = "debutEchantillon")]
+    pub debut_echantillon: u32,
+    /// Échantillonneur : vitesse de lecture en millièmes, sans changer la hauteur (étirement d'une
+    /// boucle au tempo du projet) ; 1000 : vitesse normale.
+    #[serde(default = "vitesse_normale", skip_serializing_if = "est_vitesse_normale")]
+    pub vitesse: u16,
 }
 
 pub const RELACHEMENT_DEFAUT: u8 = 64;
+pub const VITESSE_NORMALE: u16 = 1000;
 
 impl Default for NoteMusicale {
     fn default() -> Self {
-        NoteMusicale { tic: 0, duree: 1, hauteur: 60, velocite: 100, pan: 0, fin: 0, relachement: RELACHEMENT_DEFAUT, decalage: 0 }
+        NoteMusicale { tic: 0, duree: 1, hauteur: 60, velocite: 100, pan: 0, fin: 0, relachement: RELACHEMENT_DEFAUT, decalage: 0, debut_echantillon: 0, vitesse: VITESSE_NORMALE }
     }
 }
 
@@ -54,6 +62,15 @@ fn est_zero_i16(v: &i16) -> bool {
 }
 fn est_zero_u8(v: &u8) -> bool {
     *v == 0
+}
+fn est_zero_u32(v: &u32) -> bool {
+    *v == 0
+}
+fn vitesse_normale() -> u16 {
+    VITESSE_NORMALE
+}
+fn est_vitesse_normale(v: &u16) -> bool {
+    *v == VITESSE_NORMALE
 }
 fn relachement_defaut() -> u8 {
     RELACHEMENT_DEFAUT

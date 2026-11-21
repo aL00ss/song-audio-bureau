@@ -26,6 +26,9 @@ pub struct NoteJouee {
     /// Panoramique (-100 à 100) et réglage fin (cents) propres à la note.
     pub pan: i8,
     pub cents: i16,
+    /// Départ dans l'échantillon (ms) et vitesse (millièmes), pour l'échantillonneur.
+    pub debut_ms: u32,
+    pub vitesse: u16,
 }
 
 /// Notes d'un pattern. Les notes qui dépassent la fin sont coupées à la fin.
@@ -57,7 +60,17 @@ pub fn notes_du_pattern(projet: &Projet, pattern: &Pattern) -> Vec<NoteJouee> {
             let fin = ((n.tic + n.duree) as f64 + decalage).round().min(pattern.longueur as f64) as u32;
             if debut < fin {
                 for &c in &rangs {
-                    notes.push(NoteJouee { debut, fin, canal: c, hauteur: n.hauteur, velocite: n.velocite.max(1), pan: n.pan, cents: n.fin });
+                    notes.push(NoteJouee {
+                        debut,
+                        fin,
+                        canal: c,
+                        hauteur: n.hauteur,
+                        velocite: n.velocite.max(1),
+                        pan: n.pan,
+                        cents: n.fin,
+                        debut_ms: n.debut_echantillon,
+                        vitesse: n.vitesse,
+                    });
                 }
             }
         }
